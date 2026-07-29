@@ -744,6 +744,7 @@
 
   function showGuessBar() {
     S.myBuzz = true;
+    if (chatMode) closeChat(); // answering takes priority over an open chat box
     updateToolbar();
     const inp = $("guess-input");
     inp.value = "";
@@ -891,6 +892,26 @@
         S.settings = m.settings;
         applySettings(m.settings);
         renderPlayers(m.players, m.qNumber);
+        // reconcile with the authoritative room state so a missed message
+        // (dropped socket, tab switch) can never leave the UI stuck
+        if (m.state) {
+          if (m.state === "buzzed" && S.phase !== "buzzed") {
+            S.phase = "buzzed";
+            S.buzzerName = m.buzzer;
+            S.buzzRemainMs = m.buzzRemainMs || 0;
+            S.revealStart = null;
+            if (m.buzzerId === S.playerId && !S.myBuzz) showGuessBar();
+            updateToolbar();
+          } else if (m.state !== "buzzed" && S.phase === "buzzed") {
+            S.phase = m.state;
+            hideGuessBar();
+            updateToolbar();
+          }
+          if (S.phase !== "buzzed" && S.paused !== m.paused) {
+            S.paused = m.paused;
+            updateToolbar();
+          }
+        }
         break;
       }
       case "question_start": beginQuestion(m); break;

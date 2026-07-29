@@ -66,6 +66,8 @@ function makeRoom(name) {
     readBase: 0,          // wordIndex when reading last (re)started
     readStartAt: null,    // timestamp of last (re)start; null when not ticking
     buzzer: null,
+    buzzDeadline: 0,      // when the current buzzer's answer window ends
+    autoPaused: false,    // paused by the system (empty room), not a player
     lockedOut: new Set(),
     readTimer: null,
     answerTimer: null,
@@ -100,10 +102,14 @@ function getRoom(name) {
   return rooms.get(name);
 }
 
+// A player can have several live sockets (multiple tabs sharing one
+// clientKey); every one of them gets every broadcast. A tab that isn't the
+// most recent joiner must still see the game, or its clicks look dead.
 function broadcast(room, msg) {
   const data = JSON.stringify(msg);
   for (const p of room.players.values())
-    if (p.online && p.ws.readyState === 1) p.ws.send(data);
+    for (const ws of p.sockets)
+      if (ws.readyState === 1) ws.send(data);
 }
 
 function statPack(p) {
@@ -124,6 +130,8 @@ function syncState(room) {
     settings: room.settings,
     qNumber: room.qNumber,
     buzzer: room.buzzer ? room.players.get(room.buzzer)?.name : null,
+    buzzerId: room.buzzer,
+    buzzRemainMs: room.buzzDeadline ? Math.max(0, room.buzzDeadline - Date.now()) : 0,
   });
 }
 
@@ -223,12 +231,14 @@ function buzz(room, player) {
     type: "buzz", player: player.name, playerId: player.id,
     wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
   });
+  room.buzzDeadline = Date.now() + DEFAULTS.answerTime;
   room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
 }
 
 function judgeAnswer(room, player, guess) {
   if (room.state !== "buzzed" || room.buzzer !== player.id) return;
   clearTimeout(room.answerTimer); room.answerTimer = null;
+  room.buzzDeadline = 0;
   const q = room.q;
   const result = judgeGuess(guess, q.answer, q.answerDisplay); // "correct" | "prompt" | "incorrect"
   const interrupted = room.wordIndex < q.words.length;
@@ -253,6 +263,7 @@ function judgeAnswer(room, player, guess) {
       type: "judged", verdict: "prompt", correct: false, player: player.name, playerId: player.id,
       guess, points: 0, power: false, interrupted, wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
     });
+    room.buzzDeadline = Date.now() + DEFAULTS.answerTime;
     room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
   } else {
     const pts = interrupted ? -5 : 0;
@@ -336,6 +347,7 @@ function pauseGame(room, player) {
   if (!room.settings.allowPause) return;
   if (room.state !== "reading" || room.paused) return;
   room.paused = true;
+  room.autoPaused = false; // a deliberate pause — don't auto-resume on join
   room.pausedAt = Date.now();
   haltReadingClock(room);
   broadcast(room, { type: "paused", player: player.name, wordIndex: room.wordIndex });
@@ -345,6 +357,7 @@ function pauseGame(room, player) {
 function resumeGame(room, player) {
   if (room.state !== "reading" || !room.paused) return;
   room.paused = false;
+  room.autoPaused = false;
   const secs = Math.round((Date.now() - room.pausedAt) / 1000);
   broadcast(room, { type: "resumed", player: player.name, pausedFor: secs });
   if (room.wordIndex >= room.q.words.length) armDeadTimer(room, room.deadRemaining || DEFAULTS.deadTime);
@@ -359,10 +372,11 @@ function resumeGame(room, player) {
 function haltForEmpty(room) {
   if (room.state !== "reading" || room.paused) return;
   room.paused = true;
+  room.autoPaused = true;
   room.pausedAt = Date.now();
   haltReadingClock(room);
-  // no broadcast — nobody is connected to see it; resumeGame() restarts the
-  // reading clock from the frozen wordIndex when someone comes back.
+  // no broadcast — nobody is connected to see it; the join handler
+  // auto-resumes from the frozen wordIndex when someone comes back.
 }
 
 // ---------- HTTP + WS ----------
@@ -456,17 +470,31 @@ wss.on("connection", (ws) => {
       room = getRoom(roomName);
       if (room.emptyTimer) { clearTimeout(room.emptyTimer); room.emptyTimer = null; }
       const existing = msg.clientKey && [...room.players.values()].find((p) => p.clientKey === msg.clientKey);
+      const firstSocket = !existing || existing.sockets.size === 0;
       if (existing) {
         player = existing;
-        player.ws = ws; player.online = true; player.name = name;
+        player.name = name;
       } else {
         player = {
-          id: String(nextId++), clientKey: msg.clientKey || null, name, ws,
+          id: String(nextId++), clientKey: msg.clientKey || null, name,
+          sockets: new Set(),
           score: 0, correct: 0, correctStreak: 0, correctBest: 0,
           interrupts: 0, interruptStreak: 0, interruptBest: 0,
           seen: 0, online: true,
         };
         room.players.set(player.id, player);
+      }
+      player.sockets.add(ws);
+      player.online = true;
+      // the system paused this room when it emptied out — pick the game back
+      // up automatically now that someone is here, instead of ambushing them
+      // with a paused room where buzzing silently does nothing
+      if (room.autoPaused && room.paused && room.state === "reading") {
+        room.autoPaused = false;
+        room.paused = false;
+        broadcast(room, { type: "resumed", player: player.name, pausedFor: Math.round((Date.now() - room.pausedAt) / 1000) });
+        if (room.wordIndex >= room.q.words.length) armDeadTimer(room, room.deadRemaining || DEFAULTS.deadTime);
+        else startReading(room);
       }
       ws.send(JSON.stringify({
         type: "joined", playerId: player.id, room: room.name, version: VERSION,
@@ -508,7 +536,9 @@ wss.on("connection", (ws) => {
           }));
         }
       }
-      broadcastChat(room, { system: true, text: `${player.name} joined the room` });
+      // announce only the first tab/socket — a second tab or a quick
+      // reconnect shouldn't spam "joined the room" at everyone
+      if (firstSocket) broadcastChat(room, { system: true, text: `${player.name} joined the room` });
       syncState(room);
       return;
     }
@@ -587,6 +617,8 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     if (room && player) {
+      player.sockets.delete(ws);
+      if (player.sockets.size > 0) return; // another tab still holds this player
       player.online = false;
       if (room.state === "buzzed" && room.buzzer === player.id) judgeAnswer(room, player, "");
       broadcastChat(room, { system: true, text: `${player.name} left the room` });
