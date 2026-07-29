@@ -44,6 +44,10 @@ const DEFAULTS = {
   deadTime: 6000,      // ms after reading completes before question is dead
 };
 
+// How long an empty room (score, current question, settings) stays in memory
+// after the last player disconnects, e.g. by switching to a different room.
+const ROOM_EMPTY_GRACE_MS = 3 * 60 * 60 * 1000; // 3 hours
+
 function makeRoom(name) {
   return {
     name,
@@ -68,6 +72,7 @@ function makeRoom(name) {
     deadRemaining: 0,
     seen: new Set(),
     qNumber: 0,
+    emptyTimer: null,   // pending deletion once everyone's been gone a while
   };
 }
 
@@ -282,6 +287,25 @@ function resumeGame(room, player) {
   syncState(room);
 }
 
+// Silently pauses an in-progress question when the last player disconnects,
+// so the room's score/question/settings survive them switching lobbies —
+// distinct from pauseGame(), which is the user-facing button and can be
+// disabled by room settings; this system-level halt always applies.
+function haltForEmpty(room) {
+  if (room.state !== "reading" || room.paused) return;
+  room.paused = true;
+  room.pausedAt = Date.now();
+  if (room.deadTimer) {
+    clearTimeout(room.deadTimer);
+    room.deadTimer = null;
+    room.deadRemaining = Math.max(0, room.deadDeadline - Date.now());
+  } else {
+    room.deadRemaining = 0;
+  }
+  // no broadcast — nobody is connected to see it; readTimer is left running
+  // (it silently no-ops while paused) so resumeGame() needs no extra wiring.
+}
+
 // ---------- HTTP + WS ----------
 const app = express();
 app.use(express.static(path.join(__dirname, "public")));
@@ -350,6 +374,7 @@ wss.on("connection", (ws) => {
       const roomName = String(msg.room || "lobby").slice(0, 32).replace(/[^\w-]/g, "") || "lobby";
       const name = String(msg.name || "player").slice(0, 32).trim() || "player";
       room = getRoom(roomName);
+      if (room.emptyTimer) { clearTimeout(room.emptyTimer); room.emptyTimer = null; }
       const existing = msg.clientKey && [...room.players.values()].find((p) => p.clientKey === msg.clientKey);
       if (existing) {
         player = existing;
@@ -379,6 +404,7 @@ wss.on("connection", (ws) => {
           powerIndex: room.q.powerIndex, speed: room.settings.speed,
           deadTime: DEFAULTS.deadTime,
           catchup: room.q.words.slice(0, room.wordIndex),
+          paused: room.paused,
         }));
         if (room.state === "done") {
           ws.send(JSON.stringify({
@@ -468,8 +494,15 @@ wss.on("connection", (ws) => {
       broadcast(room, { type: "chat", system: true, text: `${player.name} left the room` });
       syncState(room);
       if (![...room.players.values()].some((p) => p.online)) {
-        clearTimers(room);
-        rooms.delete(room.name);
+        // Room is empty, but keep it (scores, current question, settings)
+        // around for a while in case someone switched lobbies and comes
+        // back — only the interval loops stop actively broadcasting.
+        haltForEmpty(room);
+        if (room.emptyTimer) clearTimeout(room.emptyTimer);
+        room.emptyTimer = setTimeout(() => {
+          clearTimers(room);
+          rooms.delete(room.name);
+        }, ROOM_EMPTY_GRACE_MS);
       }
     }
   });

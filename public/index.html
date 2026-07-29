@@ -655,11 +655,12 @@
     archiveLive(S.prevQuestion);
     S.cur = { qid: m.qid, set: m.set, packet: m.packet, category: m.category, subcategory: m.subcategory, sport: m.sport, level: m.level, answer: "", question: "", done: false };
     S.prevQuestion = null;
-    S.phase = "reading"; S.paused = false; S.myBuzz = false;
+    // m.paused is only set on rejoin, for a room that was auto-paused while
+    // empty (or manually paused before we left) — a fresh question_start
+    // broadcast from startQuestion() never includes it, so this defaults false.
+    S.phase = "reading"; S.paused = !!m.paused; S.myBuzz = false;
     S.powerIndex = m.powerIndex; S.totalWords = m.total; S.revealed = 0;
     S.speed = m.speed || S.speed; S.deadTime = m.deadTime || 6000;
-    S.totalMs = S.totalWords * S.speed + S.deadTime;
-    S.remainMs = S.totalMs;
     S.qNumber = m.qNumber;
     S.curBuzzRows.clear(); S.activeBuzzRow = null;
     setCrumbs(S.cur);
@@ -668,6 +669,10 @@
     $("qtext").innerHTML = "";
     $("start-wrap").style.display = "none";
     if (m.catchup) m.catchup.forEach((w, i) => { $("qtext").appendChild(wordSpan(w, i)); S.revealed = i + 1; });
+    S.totalMs = S.totalWords * S.speed + S.deadTime;
+    // rejoining mid-question: count down only the words not yet revealed,
+    // instead of restarting the clock at the full duration
+    S.remainMs = (S.totalWords - S.revealed) * S.speed + S.deadTime;
     if (m.debugAnswer) S.cur.debugAnswer = m.debugAnswer;
     updateToolbar();
     startTimerLoop();
