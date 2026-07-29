@@ -9,7 +9,7 @@ import { judgeGuess } from "./lib/answer-check.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-const VERSION = 3; // bumped when the client/server protocol changes
+const VERSION = 4; // bumped when the client/server protocol changes
 
 // ---------- Question bank ----------
 function loadQuestions() {
@@ -63,6 +63,8 @@ function makeRoom(name) {
     paused: false,
     q: null,
     wordIndex: 0,
+    readBase: 0,          // wordIndex when reading last (re)started
+    readStartAt: null,    // timestamp of last (re)start; null when not ticking
     buzzer: null,
     lockedOut: new Set(),
     readTimer: null,
@@ -158,6 +160,8 @@ function startQuestion(room) {
     type: "question_start",
     qNumber: room.qNumber,
     qid: q.id,
+    words: q.words,
+    revealed: 0,
     total: q.words.length,
     category: q.category,
     subcategory: q.subcategory,
@@ -179,28 +183,41 @@ function armDeadTimer(room, ms) {
   room.deadTimer = setTimeout(() => finishQuestion(room, null), ms);
 }
 
+// Reading is clock-based, not streamed: clients get the full word list up
+// front plus a "reading" message ({from, elapsed, speed}) and reveal words on
+// their own clock, so word display stays smooth regardless of network jitter.
+// The server keeps the authoritative position via readBase/readStartAt and
+// computes it on demand (at buzz/pause time) instead of ticking per word.
+function currentWordIndex(room) {
+  if (!room.q) return room.wordIndex;
+  if (room.readStartAt == null) return room.wordIndex;
+  const elapsed = Date.now() - room.readStartAt;
+  return Math.min(room.q.words.length, room.readBase + Math.floor(elapsed / room.settings.speed));
+}
+
 function startReading(room) {
-  clearInterval(room.readTimer);
-  room.readTimer = setInterval(() => {
-    if (room.state !== "reading" || room.paused) return;
-    if (room.wordIndex >= room.q.words.length) {
-      clearInterval(room.readTimer);
-      room.readTimer = null;
-      armDeadTimer(room, DEFAULTS.deadTime);
-      broadcast(room, { type: "reading_done" });
-      return;
-    }
-    broadcast(room, { type: "word", i: room.wordIndex, w: room.q.words[room.wordIndex] });
-    room.wordIndex++;
-  }, room.settings.speed);
+  if (room.readTimer) { clearTimeout(room.readTimer); room.readTimer = null; }
+  room.readBase = room.wordIndex;
+  room.readStartAt = Date.now();
+  broadcast(room, { type: "reading", from: room.readBase, elapsed: 0, speed: room.settings.speed });
+  const remaining = room.q.words.length - room.wordIndex;
+  room.readTimer = setTimeout(() => {
+    room.readTimer = null;
+    room.wordIndex = room.q.words.length;
+    room.readStartAt = null;
+    armDeadTimer(room, DEFAULTS.deadTime);
+    broadcast(room, { type: "reading_done" });
+  }, remaining * room.settings.speed);
 }
 
 function buzz(room, player) {
   if (room.state !== "reading" || room.paused) return;
   if (room.lockedOut.has(player.id)) return;
+  room.wordIndex = currentWordIndex(room);
+  room.readStartAt = null;
   room.state = "buzzed";
   room.buzzer = player.id;
-  clearInterval(room.readTimer); room.readTimer = null;
+  if (room.readTimer) { clearTimeout(room.readTimer); room.readTimer = null; }
   if (room.deadTimer) { clearTimeout(room.deadTimer); room.deadTimer = null; }
   broadcast(room, {
     type: "buzz", player: player.name, playerId: player.id,
@@ -300,11 +317,12 @@ function finishQuestion(room, winnerId) {
   syncState(room);
 }
 
-function pauseGame(room, player) {
-  if (!room.settings.allowPause) return;
-  if (room.state !== "reading" || room.paused) return;
-  room.paused = true;
-  room.pausedAt = Date.now();
+// freezes the reading clock: folds the current position into wordIndex,
+// stops the completion timer, and banks any remaining dead time
+function haltReadingClock(room) {
+  room.wordIndex = currentWordIndex(room);
+  room.readStartAt = null;
+  if (room.readTimer) { clearTimeout(room.readTimer); room.readTimer = null; }
   if (room.deadTimer) {
     clearTimeout(room.deadTimer);
     room.deadTimer = null;
@@ -312,6 +330,14 @@ function pauseGame(room, player) {
   } else {
     room.deadRemaining = 0;
   }
+}
+
+function pauseGame(room, player) {
+  if (!room.settings.allowPause) return;
+  if (room.state !== "reading" || room.paused) return;
+  room.paused = true;
+  room.pausedAt = Date.now();
+  haltReadingClock(room);
   broadcast(room, { type: "paused", player: player.name, wordIndex: room.wordIndex });
   syncState(room);
 }
@@ -322,6 +348,7 @@ function resumeGame(room, player) {
   const secs = Math.round((Date.now() - room.pausedAt) / 1000);
   broadcast(room, { type: "resumed", player: player.name, pausedFor: secs });
   if (room.wordIndex >= room.q.words.length) armDeadTimer(room, room.deadRemaining || DEFAULTS.deadTime);
+  else startReading(room);
   syncState(room);
 }
 
@@ -333,15 +360,9 @@ function haltForEmpty(room) {
   if (room.state !== "reading" || room.paused) return;
   room.paused = true;
   room.pausedAt = Date.now();
-  if (room.deadTimer) {
-    clearTimeout(room.deadTimer);
-    room.deadTimer = null;
-    room.deadRemaining = Math.max(0, room.deadDeadline - Date.now());
-  } else {
-    room.deadRemaining = 0;
-  }
-  // no broadcast — nobody is connected to see it; readTimer is left running
-  // (it silently no-ops while paused) so resumeGame() needs no extra wiring.
+  haltReadingClock(room);
+  // no broadcast — nobody is connected to see it; resumeGame() restarts the
+  // reading clock from the frozen wordIndex when someone comes back.
 }
 
 // ---------- HTTP + WS ----------
@@ -399,14 +420,35 @@ app.get("/:room([\\w-]+)", (_req, res) => {
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Heartbeat: hosting proxies (e.g. Render's) silently drop WebSocket
+// connections they consider idle. Ping every 30s so the connection always has
+// traffic, and terminate peers that stop answering so their player row goes
+// offline promptly instead of lingering until a failed send.
+const HEARTBEAT_MS = 30000;
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, HEARTBEAT_MS);
+wss.on("close", () => clearInterval(heartbeat));
+
 let nextId = 1;
 wss.on("connection", (ws) => {
   let room = null;
   let player = null;
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
 
   ws.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+    ws.isAlive = true;
+
+    // app-level keepalive from the client (belt to the ws-ping suspenders —
+    // some proxies only count client-initiated traffic)
+    if (msg.type === "ping") { ws.send(JSON.stringify({ type: "pong" })); return; }
 
     if (msg.type === "join") {
       const roomName = String(msg.room || "lobby").slice(0, 32).replace(/[^\w-]/g, "") || "lobby";
@@ -436,15 +478,24 @@ wss.on("connection", (ws) => {
       if (room.q && room.state !== "idle") {
         ws.send(JSON.stringify({
           type: "question_start", qNumber: room.qNumber, qid: room.q.id,
+          words: room.q.words,
+          revealed: currentWordIndex(room),
           total: room.q.words.length,
           category: room.q.category, subcategory: room.q.subcategory,
           sport: room.q.sport || null, level: room.q.level,
           set: room.q.set, packet: room.q.packet,
           powerIndex: room.q.powerIndex, speed: room.settings.speed,
           deadTime: DEFAULTS.deadTime,
-          catchup: room.q.words.slice(0, room.wordIndex),
           paused: room.paused,
         }));
+        // mid-read rejoin: hand them the live reading clock so they tick along
+        if (room.state === "reading" && !room.paused && room.readStartAt != null) {
+          ws.send(JSON.stringify({
+            type: "reading", from: room.readBase,
+            elapsed: Date.now() - room.readStartAt,
+            speed: room.settings.speed,
+          }));
+        }
         if (room.state === "done") {
           ws.send(JSON.stringify({
             type: "question_end", qid: room.q.id,
@@ -499,9 +550,17 @@ wss.on("connection", (ws) => {
         const s = room.settings;
         if (Array.isArray(msg.levels)) s.levels = msg.levels.filter((x) => LEVELS.includes(x));
         if (Array.isArray(msg.sports)) s.sports = msg.sports.filter((x) => SPORTS.includes(x));
+        const oldSpeed = s.speed;
         if (typeof msg.speed === "number") s.speed = Math.min(400, Math.max(60, msg.speed));
         for (const k of ["allowMultiBuzz", "allowSkip", "allowPause"])
           if (typeof msg[k] === "boolean") s[k] = msg[k];
+        // speed changed mid-read: fold position at the old cadence and restart
+        // the clock so every client re-syncs at the new one
+        if (s.speed !== oldSpeed && room.state === "reading" && !room.paused && room.readStartAt != null) {
+          const elapsed = Date.now() - room.readStartAt;
+          room.wordIndex = Math.min(room.q.words.length, room.readBase + Math.floor(elapsed / oldSpeed));
+          startReading(room);
+        }
         syncState(room);
         break;
       }

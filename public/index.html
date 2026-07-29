@@ -454,6 +454,9 @@
     // timer
     totalMs: 0, remainMs: 0, buzzRemainMs: 0, deadTime: 6000, speed: 135,
     totalWords: 0, revealed: 0, powerIndex: -1,
+    // clock-based reading: full word list + local reveal clock (server sends
+    // {from, elapsed, speed} instead of streaming one message per word)
+    words: [], revealBase: 0, revealStart: null,
     // current question meta
     cur: null, curBuzzRows: new Map(), activeBuzzRow: null,
     qNumber: 0, mySeen: 0,
@@ -485,6 +488,8 @@
     };
   }
   const send = (m) => S.ws?.readyState === 1 && S.ws.send(JSON.stringify(m));
+  // keepalive so hosting proxies (Render etc.) never see the socket as idle
+  setInterval(() => send({ type: "ping" }), 25000);
 
   // ---------- feed ----------
   function renderFeedItem(item) {
@@ -652,6 +657,23 @@
     return m;
   }
 
+  // append word spans up to index n (words are revealed locally on a clock;
+  // the server only sends sync points, never per-word messages)
+  function revealTo(n) {
+    const qt = $("qtext");
+    const before = S.revealed;
+    while (S.revealed < n && S.revealed < S.words.length) {
+      qt.appendChild(wordSpan(S.words[S.revealed], S.revealed));
+      S.revealed++;
+    }
+    if (S.revealed !== before) S.remainMs = (S.totalWords - S.revealed) * S.speed + S.deadTime;
+  }
+
+  function revealTick() {
+    if (S.phase !== "reading" || S.paused || S.revealStart == null || !S.words.length) return;
+    revealTo(Math.min(S.totalWords, S.revealBase + Math.floor((Date.now() - S.revealStart) / S.speed)));
+  }
+
   function beginQuestion(m) {
     // collapse previous question + its buzzes into history
     archiveLive(S.prevQuestion);
@@ -670,7 +692,10 @@
     $("cur-star").textContent = S.bookmarks[m.qid] ? "★" : "☆";
     $("qtext").innerHTML = "";
     $("start-wrap").style.display = "none";
-    if (m.catchup) m.catchup.forEach((w, i) => { $("qtext").appendChild(wordSpan(w, i)); S.revealed = i + 1; });
+    S.words = m.words || m.catchup || [];
+    S.revealBase = 0; S.revealStart = null;
+    const pre = m.revealed != null ? m.revealed : (m.catchup ? m.catchup.length : 0);
+    if (pre) revealTo(pre);
     S.totalMs = S.totalWords * S.speed + S.deadTime;
     // rejoining mid-question: count down only the words not yet revealed,
     // instead of restarting the clock at the full duration
@@ -682,6 +707,7 @@
 
   function endQuestion(m) {
     S.phase = "done"; S.paused = false; S.myBuzz = false;
+    S.revealStart = null;
     S.cur = { ...S.cur, answer: m.answer, question: m.fullQuestion, done: true, set: m.set, subcategory: m.subcategory, sport: m.sport, level: m.level };
     S.prevQuestion = { ...S.cur };
     setCrumbs(S.cur);
@@ -782,6 +808,7 @@
       lastTick = now;
       if (S.phase === "reading" && !S.paused) S.remainMs = Math.max(0, S.remainMs - dt);
       else if (S.phase === "buzzed") S.buzzRemainMs = Math.max(0, S.buzzRemainMs - dt);
+      revealTick();
       updateTimerUI();
     }, 100);
   }
@@ -867,14 +894,30 @@
         break;
       }
       case "question_start": beginQuestion(m); break;
+      case "reading": {
+        // (re)start of the reading clock: reveal locally from here on
+        S.phase = "reading";
+        S.speed = m.speed || S.speed;
+        S.revealBase = m.from;
+        S.revealStart = Date.now() - (m.elapsed || 0);
+        updateToolbar();
+        break;
+      }
       case "word": {
+        // legacy per-word streaming from old servers — still honored
         $("qtext").appendChild(wordSpan(m.w, m.i));
         S.revealed = m.i + 1;
         S.remainMs = (S.totalWords - S.revealed) * S.speed + S.deadTime;
         break;
       }
-      case "reading_done": break;
+      case "reading_done": {
+        S.revealStart = null;
+        if (S.words.length) revealTo(S.totalWords);
+        break;
+      }
       case "buzz": {
+        S.revealStart = null;
+        if (S.words.length) revealTo(m.wordIndex); // snap to the server's authoritative position
         S.phase = "buzzed";
         S.buzzerName = m.player;
         S.buzzRemainMs = m.answerTime || 8000;
@@ -929,6 +972,8 @@
       }
       case "question_end": endQuestion(m); break;
       case "paused": {
+        S.revealStart = null;
+        if (S.words.length) revealTo(m.wordIndex);
         S.paused = true;
         addMarker(m.wordIndex, "pause", "‖");
         systemMsg(`${m.player} paused the game`);

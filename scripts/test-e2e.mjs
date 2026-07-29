@@ -69,7 +69,7 @@ alice.ws.send(JSON.stringify({ type: "next" }));
 const qs = await until(alice, (m) => m.type === "question_start");
 assert(qs.subcategory === "Sports", "sports-only pool");
 assert(qs.level === "College" && qs.sport === "football", `level+sport filter respected (got ${qs.level}/${qs.sport})`);
-await until(bob, (m) => m.type === "word"); // reading began
+await until(bob, (m) => m.type === "reading"); // reading began
 bob.ws.send(JSON.stringify({ type: "buzz" }));
 await until(bob, (m) => m.type === "buzz" && m.player === "bob");
 bob.ws.send(JSON.stringify({ type: "answer", text: "zzz wrong guess zzz" }));
@@ -101,7 +101,7 @@ console.log("✓ post-reading wrong = 0 pts; all locked out → question ends, a
 alice.msgs.length = 0; bob.msgs.length = 0;
 alice.ws.send(JSON.stringify({ type: "next" }));
 await until(alice, (m) => m.type === "question_start");
-await until(alice, (m) => m.type === "word");
+await until(alice, (m) => m.type === "reading");
 alice.ws.send(JSON.stringify({ type: "skip" }));
 const qe2 = await until(alice, (m) => m.type === "question_end");
 assert(qe2.answer, "skip reveals answer");
@@ -140,7 +140,7 @@ alice.ws.send(JSON.stringify({ type: "settings", allowMultiBuzz: true }));
 await until(alice, (m) => m.type === "sync" && m.settings.allowMultiBuzz === true);
 alice.msgs.length = 0; bob.msgs.length = 0;
 alice.ws.send(JSON.stringify({ type: "next" }));
-await until(alice, (m) => m.type === "word");
+await until(alice, (m) => m.type === "reading");
 alice.ws.send(JSON.stringify({ type: "pause" }));
 const pz = await until(bob, (m) => m.type === "paused");
 assert(pz.player === "alice" && typeof pz.wordIndex === "number", "pause broadcast with word index");
