@@ -136,6 +136,7 @@
     vertical-align: baseline; margin: 0 3px 0 1px;
   }
   .marker.buzz-active { background: #3a87ad; }
+  .marker.buzz-prompt { background: #f89406; }
   .marker.buzz-wrong { background: #b94a48; }
   .marker.pause { background: #f89406; }
   #start-wrap { text-align: center; padding: 22px 0; }
@@ -514,6 +515,7 @@
   function buzzRowHTML(item) {
     let badge = "";
     if (item.verdict === "correct") badge = `<span class="badge badge-success badge-label">Correct</span>`;
+    else if (item.verdict === "prompt") badge = `<span class="badge badge-info badge-label">Prompt</span>`;
     else if (item.verdict === "wrong") badge = `<span class="badge badge-warning badge-label">Wrong</span>`;
     return `<span class="badge badge-inverse badge-label">Buzz</span>` +
       `<span class="who">${esc(item.player)}</span>` +
@@ -851,6 +853,13 @@
         if (saved && !stale) send({ type: "settings", ...saved });
         break;
       }
+      case "history": {
+        // replayed on (re)join so a refresh doesn't wipe chat/buzz/question history
+        S.feed = m.items || [];
+        S.page = 0;
+        renderHistory();
+        break;
+      }
       case "sync": {
         S.settings = m.settings;
         applySettings(m.settings);
@@ -893,15 +902,25 @@
         break;
       }
       case "judged": {
+        const isPrompt = m.verdict === "prompt";
         if (S.activeBuzzRow && m.playerId === S.activeBuzzRow.playerId) {
           S.activeBuzzRow.guess = m.guess;
-          S.activeBuzzRow.verdict = m.correct ? "correct" : "wrong";
-          if (S.activeBuzzRow.marker) S.activeBuzzRow.marker.className = "marker " + (m.correct ? "buzz-active" : "buzz-wrong");
-          S.activeBuzzRow = null;
+          S.activeBuzzRow.verdict = isPrompt ? "prompt" : (m.correct ? "correct" : "wrong");
+          if (S.activeBuzzRow.marker) {
+            S.activeBuzzRow.marker.className = "marker " + (isPrompt ? "buzz-prompt" : (m.correct ? "buzz-active" : "buzz-wrong"));
+          }
+          if (!isPrompt) S.activeBuzzRow = null;
           renderLive();
         }
         if (m.correct) ding();
-        if (!m.correct) {
+        if (isPrompt) {
+          if (m.playerId === S.playerId) {
+            S.buzzRemainMs = m.answerTime || 8000;
+            const inp = $("guess-input");
+            inp.value = "";
+            setTimeout(() => inp.focus(), 0);
+          }
+        } else if (!m.correct) {
           S.phase = "reading";
           if (m.playerId === S.playerId) hideGuessBar();
           updateToolbar();
@@ -944,12 +963,15 @@
       $("my-interrupts").innerHTML = `${me.interrupts} <span class="sub">/ ${me.interruptStreak} / ${me.interruptBest}</span>`;
       $("my-seen").innerHTML = `${me.seen} <span class="sub">/ ${roomSeen}</span>`;
     }
-    const others = players.filter((p) => p.id !== S.playerId && (p.online || p.score !== 0));
+    // only currently-connected players show in the live leaderboard — a
+    // disconnected player's score is kept server-side for reconnect, but
+    // shouldn't clutter the room list as a permanent "ghost" entry
+    const others = players.filter((p) => p.id !== S.playerId && p.online);
     const el = $("other-players");
     el.innerHTML = others.length ? `<div style="height:8px"></div>` : "";
     for (const p of others.sort((a, b) => b.score - a.score)) {
       const row = document.createElement("div");
-      row.className = "playerrow" + (p.online ? "" : " offline");
+      row.className = "playerrow";
       row.innerHTML = `<span class="pname">${esc(p.name)}</span><span class="badge">${p.score}</span>`;
       el.appendChild(row);
     }

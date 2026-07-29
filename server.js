@@ -5,7 +5,7 @@ import { WebSocketServer } from "ws";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { checkAnswer } from "./lib/answer-check.js";
+import { judgeGuess } from "./lib/answer-check.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -73,7 +73,24 @@ function makeRoom(name) {
     seen: new Set(),
     qNumber: 0,
     emptyTimer: null,   // pending deletion once everyone's been gone a while
+    history: [],        // chat/buzz/question feed items, newest first — replayed to (re)joining clients
   };
+}
+
+const HISTORY_LIMIT = 600; // matches the client's own feed cap
+
+function pushHistory(room, item) {
+  room.history.unshift(item);
+  if (room.history.length > HISTORY_LIMIT) room.history.length = HISTORY_LIMIT;
+}
+
+// every player-facing chat/system line goes through here so it's both
+// broadcast live and recorded for players who join/reconnect afterward
+function broadcastChat(room, msg) {
+  broadcast(room, { type: "chat", ...msg });
+  pushHistory(room, msg.system
+    ? { kind: "system", text: msg.text }
+    : { kind: "chat", player: msg.player, playerId: msg.playerId, text: msg.text });
 }
 
 function getRoom(name) {
@@ -196,11 +213,11 @@ function judgeAnswer(room, player, guess) {
   if (room.state !== "buzzed" || room.buzzer !== player.id) return;
   clearTimeout(room.answerTimer); room.answerTimer = null;
   const q = room.q;
-  const correct = checkAnswer(guess, q.answer);
+  const result = judgeGuess(guess, q.answer, q.answerDisplay); // "correct" | "prompt" | "incorrect"
   const interrupted = room.wordIndex < q.words.length;
   const inPower = q.powerIndex >= 0 && room.wordIndex <= q.powerIndex;
 
-  if (correct) {
+  if (result === "correct") {
     const pts = inPower ? 15 : 10;
     player.score += pts;
     player.correct++;
@@ -208,10 +225,18 @@ function judgeAnswer(room, player, guess) {
     player.correctBest = Math.max(player.correctBest, player.correctStreak);
     player.interruptStreak = 0;
     broadcast(room, {
-      type: "judged", correct: true, player: player.name, playerId: player.id,
+      type: "judged", verdict: "correct", correct: true, player: player.name, playerId: player.id,
       guess, points: pts, power: inPower, interrupted, wordIndex: room.wordIndex,
     });
+    pushHistory(room, { kind: "buzz", player: player.name, playerId: player.id, guess, verdict: "correct" });
     finishQuestion(room, player.id);
+  } else if (result === "prompt") {
+    // needs more — buzzer stays with this player, no points/penalty either way
+    broadcast(room, {
+      type: "judged", verdict: "prompt", correct: false, player: player.name, playerId: player.id,
+      guess, points: 0, power: false, interrupted, wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
+    });
+    room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
   } else {
     const pts = interrupted ? -5 : 0;
     player.score += pts;
@@ -223,9 +248,10 @@ function judgeAnswer(room, player, guess) {
     player.correctStreak = 0;
     if (!room.settings.allowMultiBuzz) room.lockedOut.add(player.id);
     broadcast(room, {
-      type: "judged", correct: false, player: player.name, playerId: player.id,
+      type: "judged", verdict: "incorrect", correct: false, player: player.name, playerId: player.id,
       guess, points: pts, power: false, interrupted, wordIndex: room.wordIndex,
     });
+    pushHistory(room, { kind: "buzz", player: player.name, playerId: player.id, guess, verdict: "wrong" });
     room.buzzer = null;
     const active = [...room.players.values()].filter((p) => p.online);
     if (!room.settings.allowMultiBuzz && active.length &&
@@ -258,6 +284,18 @@ function finishQuestion(room, winnerId) {
     subcategory: room.q.subcategory,
     sport: room.q.sport || null,
     level: room.q.level,
+  });
+  pushHistory(room, {
+    kind: "question",
+    qid: room.q.id,
+    set: room.q.set,
+    packet: room.q.packet,
+    category: room.q.category,
+    subcategory: room.q.subcategory,
+    sport: room.q.sport || null,
+    level: room.q.level,
+    answer: room.q.answerDisplay || room.q.answer,
+    question: room.q.question,
   });
   syncState(room);
 }
@@ -394,6 +432,7 @@ wss.on("connection", (ws) => {
         settings: room.settings,
         questionCount: QUESTIONS.length,
       }));
+      ws.send(JSON.stringify({ type: "history", items: room.history }));
       if (room.q && room.state !== "idle") {
         ws.send(JSON.stringify({
           type: "question_start", qNumber: room.qNumber, qid: room.q.id,
@@ -418,7 +457,7 @@ wss.on("connection", (ws) => {
           }));
         }
       }
-      broadcast(room, { type: "chat", system: true, text: `${player.name} joined the room` });
+      broadcastChat(room, { system: true, text: `${player.name} joined the room` });
       syncState(room);
       return;
     }
@@ -431,7 +470,7 @@ wss.on("connection", (ws) => {
         break;
       case "skip":
         if (room.settings.allowSkip && room.state === "reading" && !room.paused) {
-          broadcast(room, { type: "chat", system: true, text: `${player.name} skipped the question` });
+          broadcastChat(room, { system: true, text: `${player.name} skipped the question` });
           finishQuestion(room, null);
         }
         break;
@@ -453,7 +492,7 @@ wss.on("connection", (ws) => {
       }
       case "chat": {
         const text = String(msg.text || "").slice(0, 400).trim();
-        if (text) broadcast(room, { type: "chat", player: player.name, playerId: player.id, text });
+        if (text) broadcastChat(room, { player: player.name, playerId: player.id, text });
         break;
       }
       case "settings": {
@@ -469,7 +508,7 @@ wss.on("connection", (ws) => {
       case "rename": {
         const name = String(msg.name || "").slice(0, 32).trim();
         if (name && name !== player.name) {
-          broadcast(room, { type: "chat", system: true, text: `${player.name} is now known as ${name}` });
+          broadcastChat(room, { system: true, text: `${player.name} is now known as ${name}` });
           player.name = name;
           syncState(room);
         }
@@ -480,7 +519,7 @@ wss.on("connection", (ws) => {
           score: 0, correct: 0, correctStreak: 0, correctBest: 0,
           interrupts: 0, interruptStreak: 0, interruptBest: 0, seen: 0,
         });
-        broadcast(room, { type: "chat", system: true, text: `${player.name} reset their score` });
+        broadcastChat(room, { system: true, text: `${player.name} reset their score` });
         syncState(room);
         break;
       }
@@ -491,7 +530,7 @@ wss.on("connection", (ws) => {
     if (room && player) {
       player.online = false;
       if (room.state === "buzzed" && room.buzzer === player.id) judgeAnswer(room, player, "");
-      broadcast(room, { type: "chat", system: true, text: `${player.name} left the room` });
+      broadcastChat(room, { system: true, text: `${player.name} left the room` });
       syncState(room);
       if (![...room.players.values()].some((p) => p.online)) {
         // Room is empty, but keep it (scores, current question, settings)
