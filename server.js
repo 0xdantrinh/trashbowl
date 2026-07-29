@@ -1,0 +1,478 @@
+// TrashBowl — Protobowl-style realtime quizbowl server (Trash & Sports)
+import express from "express";
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
+import { readFileSync, existsSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { checkAnswer } from "./lib/answer-check.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = process.env.PORT || 3000;
+const VERSION = 3; // bumped when the client/server protocol changes
+
+// ---------- Question bank ----------
+function loadQuestions() {
+  const files = ["data/questions.json", "data/original-sports.json"];
+  let all = [];
+  for (const f of files) {
+    const p = path.join(__dirname, f);
+    if (existsSync(p)) all = all.concat(JSON.parse(readFileSync(p, "utf8")));
+  }
+  // Sports-only for now — the rest of the Trash bank stays on disk for later
+  all = all.filter((q) => q.subcategory === "Sports");
+  for (const q of all) {
+    q.words = q.question.split(/\s+/).filter(Boolean);
+    q.powerIndex = q.words.findIndex((w) => w.includes("(*)"));
+    if (!q.level) q.level = "College";
+  }
+  return all;
+}
+const QUESTIONS = loadQuestions();
+const QBYID = new Map(QUESTIONS.map((q) => [q.id, q]));
+const SUBCATS = [...new Set(QUESTIONS.map((q) => q.subcategory))].sort();
+const SPORTS = [...new Set(QUESTIONS.filter((q) => q.sport).map((q) => q.sport))].sort();
+const LEVELS = ["College", "High School", "Middle School"].filter((l) => QUESTIONS.some((q) => q.level === l));
+console.log(`Loaded ${QUESTIONS.length} sports questions`, { sports: SPORTS.length, levels: LEVELS });
+
+// ---------- Rooms ----------
+const rooms = new Map();
+
+const DEFAULTS = {
+  speed: 135,          // ms per word
+  answerTime: 8000,    // ms to answer after buzzing
+  deadTime: 6000,      // ms after reading completes before question is dead
+};
+
+function makeRoom(name) {
+  return {
+    name,
+    players: new Map(),
+    settings: {
+      speed: DEFAULTS.speed,
+      levels: [], sports: [],             // empty = all
+      allowMultiBuzz: true,
+      allowSkip: true,
+      allowPause: true,
+    },
+    state: "idle",        // idle | reading | buzzed | done
+    paused: false,
+    q: null,
+    wordIndex: 0,
+    buzzer: null,
+    lockedOut: new Set(),
+    readTimer: null,
+    answerTimer: null,
+    deadTimer: null,
+    deadDeadline: 0,      // for pausing during dead-time
+    deadRemaining: 0,
+    seen: new Set(),
+    qNumber: 0,
+  };
+}
+
+function getRoom(name) {
+  if (!rooms.has(name)) rooms.set(name, makeRoom(name));
+  return rooms.get(name);
+}
+
+function broadcast(room, msg) {
+  const data = JSON.stringify(msg);
+  for (const p of room.players.values())
+    if (p.online && p.ws.readyState === 1) p.ws.send(data);
+}
+
+function statPack(p) {
+  return {
+    id: p.id, name: p.name, score: p.score, online: p.online,
+    correct: p.correct, correctStreak: p.correctStreak, correctBest: p.correctBest,
+    interrupts: p.interrupts, interruptStreak: p.interruptStreak, interruptBest: p.interruptBest,
+    seen: p.seen,
+  };
+}
+
+function syncState(room) {
+  broadcast(room, {
+    type: "sync",
+    state: room.state,
+    paused: room.paused,
+    players: [...room.players.values()].map(statPack),
+    settings: room.settings,
+    qNumber: room.qNumber,
+    buzzer: room.buzzer ? room.players.get(room.buzzer)?.name : null,
+  });
+}
+
+// ---------- Game flow ----------
+function pickQuestion(room) {
+  let pool = QUESTIONS.filter((q) => !room.seen.has(q.id));
+  if (room.settings.levels.length)
+    pool = pool.filter((q) => room.settings.levels.includes(q.level));
+  if (room.settings.sports.length)
+    pool = pool.filter((q) => room.settings.sports.includes(q.sport));
+  if (!pool.length) { room.seen.clear(); return pickQuestion(room); }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function clearTimers(room) {
+  for (const t of ["readTimer", "answerTimer", "deadTimer"]) {
+    if (room[t]) { clearTimeout(room[t]); clearInterval(room[t]); room[t] = null; }
+  }
+}
+
+function startQuestion(room) {
+  clearTimers(room);
+  const q = pickQuestion(room);
+  room.seen.add(q.id);
+  room.q = q;
+  room.qNumber++;
+  room.state = "reading";
+  room.paused = false;
+  room.wordIndex = 0;
+  room.buzzer = null;
+  room.lockedOut = new Set();
+  for (const p of room.players.values()) if (p.online) p.seen++;
+  broadcast(room, {
+    type: "question_start",
+    qNumber: room.qNumber,
+    qid: q.id,
+    total: q.words.length,
+    category: q.category,
+    subcategory: q.subcategory,
+    sport: q.sport || null,
+    level: q.level,
+    set: q.set,
+    packet: q.packet,
+    powerIndex: q.powerIndex,
+    speed: room.settings.speed,
+    deadTime: DEFAULTS.deadTime,
+    ...(process.env.TB_DEBUG ? { debugAnswer: q.answer } : {}),
+  });
+  syncState(room);
+  startReading(room);
+}
+
+function armDeadTimer(room, ms) {
+  room.deadDeadline = Date.now() + ms;
+  room.deadTimer = setTimeout(() => finishQuestion(room, null), ms);
+}
+
+function startReading(room) {
+  clearInterval(room.readTimer);
+  room.readTimer = setInterval(() => {
+    if (room.state !== "reading" || room.paused) return;
+    if (room.wordIndex >= room.q.words.length) {
+      clearInterval(room.readTimer);
+      room.readTimer = null;
+      armDeadTimer(room, DEFAULTS.deadTime);
+      broadcast(room, { type: "reading_done" });
+      return;
+    }
+    broadcast(room, { type: "word", i: room.wordIndex, w: room.q.words[room.wordIndex] });
+    room.wordIndex++;
+  }, room.settings.speed);
+}
+
+function buzz(room, player) {
+  if (room.state !== "reading" || room.paused) return;
+  if (room.lockedOut.has(player.id)) return;
+  room.state = "buzzed";
+  room.buzzer = player.id;
+  clearInterval(room.readTimer); room.readTimer = null;
+  if (room.deadTimer) { clearTimeout(room.deadTimer); room.deadTimer = null; }
+  broadcast(room, {
+    type: "buzz", player: player.name, playerId: player.id,
+    wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
+  });
+  room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
+}
+
+function judgeAnswer(room, player, guess) {
+  if (room.state !== "buzzed" || room.buzzer !== player.id) return;
+  clearTimeout(room.answerTimer); room.answerTimer = null;
+  const q = room.q;
+  const correct = checkAnswer(guess, q.answer);
+  const interrupted = room.wordIndex < q.words.length;
+  const inPower = q.powerIndex >= 0 && room.wordIndex <= q.powerIndex;
+
+  if (correct) {
+    const pts = inPower ? 15 : 10;
+    player.score += pts;
+    player.correct++;
+    player.correctStreak++;
+    player.correctBest = Math.max(player.correctBest, player.correctStreak);
+    player.interruptStreak = 0;
+    broadcast(room, {
+      type: "judged", correct: true, player: player.name, playerId: player.id,
+      guess, points: pts, power: inPower, interrupted, wordIndex: room.wordIndex,
+    });
+    finishQuestion(room, player.id);
+  } else {
+    const pts = interrupted ? -5 : 0;
+    player.score += pts;
+    if (interrupted) {
+      player.interrupts++;
+      player.interruptStreak++;
+      player.interruptBest = Math.max(player.interruptBest, player.interruptStreak);
+    }
+    player.correctStreak = 0;
+    if (!room.settings.allowMultiBuzz) room.lockedOut.add(player.id);
+    broadcast(room, {
+      type: "judged", correct: false, player: player.name, playerId: player.id,
+      guess, points: pts, power: false, interrupted, wordIndex: room.wordIndex,
+    });
+    room.buzzer = null;
+    const active = [...room.players.values()].filter((p) => p.online);
+    if (!room.settings.allowMultiBuzz && active.length &&
+        active.every((p) => room.lockedOut.has(p.id))) {
+      finishQuestion(room, null);
+      return;
+    }
+    room.state = "reading";
+    syncState(room);
+    if (room.wordIndex >= q.words.length) armDeadTimer(room, DEFAULTS.deadTime);
+    else startReading(room);
+  }
+}
+
+function finishQuestion(room, winnerId) {
+  clearTimers(room);
+  room.state = "done";
+  room.paused = false;
+  room.buzzer = null;
+  broadcast(room, {
+    type: "question_end",
+    qid: room.q.id,
+    answer: room.q.answerDisplay || room.q.answer,
+    answerText: room.q.answer,
+    fullQuestion: room.q.question,
+    winner: winnerId ? room.players.get(winnerId)?.name : null,
+    set: room.q.set,
+    packet: room.q.packet,
+    category: room.q.category,
+    subcategory: room.q.subcategory,
+    sport: room.q.sport || null,
+    level: room.q.level,
+  });
+  syncState(room);
+}
+
+function pauseGame(room, player) {
+  if (!room.settings.allowPause) return;
+  if (room.state !== "reading" || room.paused) return;
+  room.paused = true;
+  room.pausedAt = Date.now();
+  if (room.deadTimer) {
+    clearTimeout(room.deadTimer);
+    room.deadTimer = null;
+    room.deadRemaining = Math.max(0, room.deadDeadline - Date.now());
+  } else {
+    room.deadRemaining = 0;
+  }
+  broadcast(room, { type: "paused", player: player.name, wordIndex: room.wordIndex });
+  syncState(room);
+}
+
+function resumeGame(room, player) {
+  if (room.state !== "reading" || !room.paused) return;
+  room.paused = false;
+  const secs = Math.round((Date.now() - room.pausedAt) / 1000);
+  broadcast(room, { type: "resumed", player: player.name, pausedFor: secs });
+  if (room.wordIndex >= room.q.words.length) armDeadTimer(room, room.deadRemaining || DEFAULTS.deadTime);
+  syncState(room);
+}
+
+// ---------- HTTP + WS ----------
+const app = express();
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/api/stats", (_req, res) => {
+  res.json({
+    version: VERSION,
+    questions: QUESTIONS.length,
+    subcategories: SUBCATS,
+    sports: SPORTS,
+    levels: LEVELS,
+    rooms: [...rooms.values()]
+      .map((r) => ({ name: r.name, players: [...r.players.values()].filter((p) => p.online).length }))
+      .filter((r) => r.players > 0),
+  });
+});
+
+app.get("/api/search", (req, res) => {
+  const q = String(req.query.q || "").toLowerCase().trim();
+  if (q.length < 2) return res.json({ results: [] });
+  const results = [];
+  for (const question of QUESTIONS) {
+    if (question.answer.toLowerCase().includes(q) || question.question.toLowerCase().includes(q)) {
+      results.push({
+        qid: question.id,
+        set: question.set, packet: question.packet,
+        category: question.category, subcategory: question.subcategory,
+        sport: question.sport || null, level: question.level,
+        answer: question.answerDisplay || question.answer,
+        question: question.question,
+      });
+      if (results.length >= 30) break;
+    }
+  }
+  res.json({ results });
+});
+
+app.get("/api/question/:id", (req, res) => {
+  const q = QBYID.get(req.params.id);
+  if (!q) return res.status(404).json({ error: "not found" });
+  res.json({
+    qid: q.id, set: q.set, packet: q.packet, category: q.category,
+    subcategory: q.subcategory, sport: q.sport || null, level: q.level,
+    answer: q.answerDisplay || q.answer, question: q.question,
+  });
+});
+
+// room URLs like protobowl.com/roomname
+app.get("/:room([\\w-]+)", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+const server = createServer(app);
+const wss = new WebSocketServer({ server });
+
+let nextId = 1;
+wss.on("connection", (ws) => {
+  let room = null;
+  let player = null;
+
+  ws.on("message", (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    if (msg.type === "join") {
+      const roomName = String(msg.room || "lobby").slice(0, 32).replace(/[^\w-]/g, "") || "lobby";
+      const name = String(msg.name || "player").slice(0, 32).trim() || "player";
+      room = getRoom(roomName);
+      const existing = msg.clientKey && [...room.players.values()].find((p) => p.clientKey === msg.clientKey);
+      if (existing) {
+        player = existing;
+        player.ws = ws; player.online = true; player.name = name;
+      } else {
+        player = {
+          id: String(nextId++), clientKey: msg.clientKey || null, name, ws,
+          score: 0, correct: 0, correctStreak: 0, correctBest: 0,
+          interrupts: 0, interruptStreak: 0, interruptBest: 0,
+          seen: 0, online: true,
+        };
+        room.players.set(player.id, player);
+      }
+      ws.send(JSON.stringify({
+        type: "joined", playerId: player.id, room: room.name, version: VERSION,
+        subcategories: SUBCATS, sports: SPORTS, levels: LEVELS,
+        settings: room.settings,
+        questionCount: QUESTIONS.length,
+      }));
+      if (room.q && room.state !== "idle") {
+        ws.send(JSON.stringify({
+          type: "question_start", qNumber: room.qNumber, qid: room.q.id,
+          total: room.q.words.length,
+          category: room.q.category, subcategory: room.q.subcategory,
+          sport: room.q.sport || null, level: room.q.level,
+          set: room.q.set, packet: room.q.packet,
+          powerIndex: room.q.powerIndex, speed: room.settings.speed,
+          deadTime: DEFAULTS.deadTime,
+          catchup: room.q.words.slice(0, room.wordIndex),
+        }));
+        if (room.state === "done") {
+          ws.send(JSON.stringify({
+            type: "question_end", qid: room.q.id,
+            answer: room.q.answerDisplay || room.q.answer,
+            answerText: room.q.answer,
+            fullQuestion: room.q.question, winner: null,
+            set: room.q.set, packet: room.q.packet,
+            category: room.q.category, subcategory: room.q.subcategory,
+            sport: room.q.sport || null, level: room.q.level,
+          }));
+        }
+      }
+      broadcast(room, { type: "chat", system: true, text: `${player.name} joined the room` });
+      syncState(room);
+      return;
+    }
+
+    if (!room || !player) return;
+
+    switch (msg.type) {
+      case "next":
+        if (room.state === "idle" || room.state === "done") startQuestion(room);
+        break;
+      case "skip":
+        if (room.settings.allowSkip && room.state === "reading" && !room.paused) {
+          broadcast(room, { type: "chat", system: true, text: `${player.name} skipped the question` });
+          finishQuestion(room, null);
+        }
+        break;
+      case "pause": pauseGame(room, player); break;
+      case "resume": resumeGame(room, player); break;
+      case "buzz": buzz(room, player); break;
+      case "answer":
+        judgeAnswer(room, player, String(msg.text || "").slice(0, 200));
+        break;
+      case "typing": {
+        // live keystroke broadcast (guess while buzzed, or chat)
+        const kind = msg.kind === "guess" ? "guess" : "chat";
+        if (kind === "guess" && room.buzzer !== player.id) break;
+        broadcast(room, {
+          type: "typing", kind, player: player.name, playerId: player.id,
+          text: String(msg.text || "").slice(0, 200),
+        });
+        break;
+      }
+      case "chat": {
+        const text = String(msg.text || "").slice(0, 400).trim();
+        if (text) broadcast(room, { type: "chat", player: player.name, playerId: player.id, text });
+        break;
+      }
+      case "settings": {
+        const s = room.settings;
+        if (Array.isArray(msg.levels)) s.levels = msg.levels.filter((x) => LEVELS.includes(x));
+        if (Array.isArray(msg.sports)) s.sports = msg.sports.filter((x) => SPORTS.includes(x));
+        if (typeof msg.speed === "number") s.speed = Math.min(400, Math.max(60, msg.speed));
+        for (const k of ["allowMultiBuzz", "allowSkip", "allowPause"])
+          if (typeof msg[k] === "boolean") s[k] = msg[k];
+        syncState(room);
+        break;
+      }
+      case "rename": {
+        const name = String(msg.name || "").slice(0, 32).trim();
+        if (name && name !== player.name) {
+          broadcast(room, { type: "chat", system: true, text: `${player.name} is now known as ${name}` });
+          player.name = name;
+          syncState(room);
+        }
+        break;
+      }
+      case "reset_score": {
+        Object.assign(player, {
+          score: 0, correct: 0, correctStreak: 0, correctBest: 0,
+          interrupts: 0, interruptStreak: 0, interruptBest: 0, seen: 0,
+        });
+        broadcast(room, { type: "chat", system: true, text: `${player.name} reset their score` });
+        syncState(room);
+        break;
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    if (room && player) {
+      player.online = false;
+      if (room.state === "buzzed" && room.buzzer === player.id) judgeAnswer(room, player, "");
+      broadcast(room, { type: "chat", system: true, text: `${player.name} left the room` });
+      syncState(room);
+      if (![...room.players.values()].some((p) => p.online)) {
+        clearTimers(room);
+        rooms.delete(room.name);
+      }
+    }
+  });
+});
+
+server.listen(PORT, () => console.log(`TrashBowl running at http://localhost:${PORT}`));

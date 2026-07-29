@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrashBowl</title>
+<style>
+  /* ---- Bootstrap-2-era look ---- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px; line-height: 20px; color: #333; background: #fff;
+  }
+  a { color: #0088cc; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* navbar */
+  #navbar {
+    display: flex; align-items: center; padding: 8px 20px;
+    border-bottom: 1px solid #e5e5e5; background: #fff;
+  }
+  #navbar .brand { font-size: 21px; font-weight: 700; color: #000; }
+  #navbar .brand span { color: #999; font-weight: 300; }
+  #navbar .tagline { color: #999; font-style: italic; font-size: 12.5px; margin-left: 10px; }
+  #navbar .spacer { flex: 1; }
+  #navbar .about { color: #555; margin-right: 14px; font-size: 13.5px; cursor: pointer; }
+  .btn-group { display: inline-flex; position: relative; }
+  .btn-group .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .btn-group .btn.caret-btn {
+    border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 4px 8px;
+  }
+  .caret {
+    display: inline-block; width: 0; height: 0; vertical-align: middle;
+    border-top: 4px solid #fff; border-right: 4px solid transparent; border-left: 4px solid transparent;
+  }
+  .dropdown-menu {
+    position: absolute; top: 100%; right: 0; z-index: 100; display: none; min-width: 160px;
+    background: #fff; border: 1px solid rgba(0,0,0,0.2); border-radius: 5px; padding: 4px 0;
+    box-shadow: 0 5px 10px rgba(0,0,0,0.2); margin-top: 2px; list-style: none;
+  }
+  .dropdown-menu.open { display: block; }
+  .dropdown-menu a { display: block; padding: 4px 15px; color: #333; font-size: 13.5px; }
+  .dropdown-menu a:hover { background: #0088cc; color: #fff; text-decoration: none; }
+
+  /* buttons */
+  .btn {
+    display: inline-block; padding: 5px 13px; font-size: 13.5px; line-height: 18px;
+    color: #333; text-align: center; cursor: pointer; border-radius: 4px;
+    border: 1px solid #ccc; border-bottom-color: #b3b3b3;
+    background: linear-gradient(to bottom, #ffffff, #e6e6e6);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 1px 2px rgba(0,0,0,.05);
+    text-shadow: 0 1px 1px rgba(255,255,255,.75); user-select: none;
+    font-family: inherit;
+  }
+  .btn:hover { background: #e6e6e6; text-decoration: none; }
+  .btn:active { box-shadow: inset 0 2px 4px rgba(0,0,0,.15); }
+  .btn.disabled, .btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
+  .btn-primary, .btn-info, .btn-success, .btn-warning, .btn-danger {
+    color: #fff; text-shadow: 0 -1px 0 rgba(0,0,0,.25); border-color: rgba(0,0,0,.15) rgba(0,0,0,.15) rgba(0,0,0,.25);
+  }
+  .btn-primary { background: linear-gradient(to bottom, #049cdb, #0064cd); }
+  .btn-primary:hover { background: #0064cd; }
+  .btn-info { background: linear-gradient(to bottom, #5bc0de, #2f96b4); }
+  .btn-info:hover { background: #2f96b4; }
+  .btn-success { background: linear-gradient(to bottom, #62c462, #51a351); }
+  .btn-success:hover { background: #51a351; }
+  .btn-warning { background: linear-gradient(to bottom, #fbb450, #f89406); }
+  .btn-warning:hover { background: #f89406; }
+  .btn-danger { background: linear-gradient(to bottom, #ee5f5b, #bd362f); }
+  .btn-danger:hover { background: #bd362f; }
+  .btn-large { padding: 10px 19px; font-size: 16.25px; border-radius: 6px; }
+
+  /* badges */
+  .badge {
+    display: inline-block; padding: 2px 7px; font-size: 11.5px; font-weight: bold;
+    color: #fff; background: #999; border-radius: 9px; vertical-align: middle;
+    text-shadow: 0 -1px 0 rgba(0,0,0,.25); line-height: 14px;
+  }
+  .badge-label {
+    border-radius: 3px; padding: 2px 5px;
+  }
+  .badge-inverse { background: #333; }
+  .badge-success { background: #468847; }
+  .badge-warning { background: #f89406; }
+  .badge-important { background: #b94a48; }
+  .badge-info { background: #3a87ad; }
+
+  /* layout */
+  #page { display: flex; gap: 26px; padding: 18px 20px; max-width: 1400px; margin: 0 auto; align-items: flex-start; }
+  #maincol { flex: 1; min-width: 0; }
+  #sidebar { width: 252px; flex-shrink: 0; }
+
+  /* toolbar */
+  #toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  #toolbar .spacer { flex: 1; }
+  #guessbar { display: none; gap: 0; margin-bottom: 12px; align-items: stretch; }
+  #guessbar .glabel {
+    background: linear-gradient(to bottom, #ffffff, #e6e6e6); border: 1px solid #ccc;
+    border-radius: 4px 0 0 4px; padding: 5px 13px; font-size: 13.5px; color: #333;
+    text-shadow: 0 1px 1px rgba(255,255,255,.75); white-space: nowrap;
+  }
+  #guessbar input {
+    flex: 1; border: 1px solid #ccc; border-left: none; border-radius: 0 4px 4px 0;
+    padding: 5px 10px; font-size: 14px; font-family: inherit; color: #555; outline: none;
+  }
+  #guessbar input:focus { border-color: rgba(82,168,236,.8); box-shadow: 0 0 8px rgba(82,168,236,.6); }
+
+  /* question cards */
+  .qcard { margin-bottom: 12px; }
+  .qcard .qheader {
+    display: flex; align-items: baseline; gap: 6px; background: #f5f5f5;
+    border: 1px solid #e3e3e3; border-radius: 4px; padding: 7px 12px; font-size: 13.5px;
+    flex-wrap: wrap; cursor: default;
+  }
+  .qcard .qheader .crumb { color: #333; }
+  .qcard .qheader .sep { color: #999; }
+  .qcard .qheader .edit { color: #999; }
+  .qcard .qheader .edit:hover { color: #0088cc; }
+  .qcard .qheader .qanswer { margin-left: auto; font-weight: bold; text-align: right; flex: 1; min-width: 120px; }
+  .qcard .qheader .qanswer b, .qcard .qheader .qanswer u { color: #333; }
+  .qcard .qheader .star { cursor: pointer; color: #0088cc; font-size: 15px; margin-left: 6px; flex-shrink: 0; }
+  .qcard .qheader .star:hover { transform: scale(1.15); }
+  .qcard .qbody {
+    background: #fafafa; border: 1px solid #e3e3e3; border-radius: 4px; margin-top: 8px;
+    padding: 14px 18px; font-size: 14px; line-height: 22px; min-height: 96px;
+  }
+  .qcard.compact .qbody { display: none; margin-top: 4px; min-height: 0; }
+  .qcard.compact.expanded .qbody { display: block; }
+  .qcard.compact { margin-bottom: 8px; }
+  .qcard.compact .qheader { cursor: pointer; }
+  .power { font-weight: bold; }
+  .marker {
+    display: inline-block; width: 14px; height: 14px; border-radius: 3px; color: #fff;
+    font-size: 10px; font-weight: bold; text-align: center; line-height: 14px;
+    vertical-align: baseline; margin: 0 3px 0 1px;
+  }
+  .marker.buzz-active { background: #3a87ad; }
+  .marker.buzz-wrong { background: #b94a48; }
+  .marker.pause { background: #f89406; }
+  #start-wrap { text-align: center; padding: 22px 0; }
+
+  /* feed */
+  .feeditem { margin: 9px 2px; font-size: 13.5px; word-wrap: break-word; }
+  .feeditem.system { font-style: italic; color: #333; }
+  .feeditem .cnt { margin-right: 6px; }
+  .buzzrow { margin: 9px 2px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .buzzrow .who { font-weight: bold; }
+  .buzzrow .guess { color: #333; }
+  .chatrow .who { font-weight: bold; }
+  .chatrow .typing { color: #999; font-style: italic; }
+
+  /* history/search */
+  #histhead { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; }
+  #histhead .hr { flex: 1; border-top: 1px solid #e5e5e5; }
+  #histhead .bmcount { color: #555; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  #histhead .bmcount.active { color: #0088cc; font-weight: bold; }
+  #search {
+    width: 210px; border: 1px solid #ccc; border-radius: 14px; padding: 5px 12px;
+    font-size: 13.5px; font-family: inherit; color: #555; outline: none;
+  }
+  #search:focus { border-color: rgba(82,168,236,.8); box-shadow: 0 0 8px rgba(82,168,236,.6); }
+  #pager { display: flex; align-items: center; margin: 16px 0 30px; }
+  #pager .pageno { flex: 1; text-align: center; color: #999; font-size: 12px; }
+  #pager .btn { border-radius: 15px; color: #0088cc; }
+
+  /* sidebar cards */
+  .card {
+    border: 1px solid #e3e3e3; border-radius: 4px; padding: 12px 14px; margin-bottom: 16px;
+    background: #fff;
+  }
+  .card h4 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+  .card h4 .icon { font-size: 13px; }
+  /* timer */
+  #timer-digits { font-size: 30px; font-weight: bold; text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 0.5px; }
+  #timer-digits .tenths { font-size: 18px; color: #555; }
+  #timercard .toprow { display: flex; align-items: center; }
+  #timercard .toprow .clock { font-size: 15px; color: #333; }
+  #timercard .toprow .tbadge { margin-left: auto; }
+  .progress {
+    height: 9px; background: #f7f7f7; border-radius: 4px; margin-top: 9px; overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.1);
+  }
+  .progress .bar {
+    height: 100%; width: 0%; background: #149bdf; transition: width 0.1s linear;
+  }
+  .progress .bar.red { background: #dd514c; }
+  .progress .bar.striped {
+    background: #149bdf linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+    background-size: 40px 40px; animation: pbstripes 2s linear infinite;
+  }
+  @keyframes pbstripes { from { background-position: 40px 0; } to { background-position: 0 0; } }
+  /* stats */
+  .statrow { display: flex; align-items: baseline; padding: 5px 0; border-top: 1px solid #f2f2f2; font-size: 13.5px; }
+  .statrow:first-of-type { border-top: none; }
+  .statrow .lbl { color: #333; }
+  .statrow .val { margin-left: auto; font-weight: bold; }
+  .statrow .sub { color: #999; font-weight: normal; font-size: 12px; }
+  .playerrow { display: flex; align-items: center; padding: 5px 0; border-top: 1px solid #f2f2f2; font-size: 13.5px; }
+  .playerrow .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .playerrow.offline .pname { color: #aaa; }
+  .playerrow .badge { margin-left: auto; }
+  /* settings */
+  .input-prepend { display: flex; margin-bottom: 9px; }
+  .input-prepend .addon {
+    background: #eee; border: 1px solid #ccc; border-right: none; border-radius: 4px 0 0 4px;
+    padding: 5px 9px; font-size: 13px; color: #555;
+  }
+  .input-prepend input, .input-prepend select {
+    flex: 1; min-width: 0; border: 1px solid #ccc; border-radius: 0 4px 4px 0; padding: 5px 8px;
+    font-size: 13.5px; font-family: inherit; color: #555; outline: none; background: #fff;
+  }
+  .input-prepend select { border-radius: 0; }
+  .input-prepend select:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+  .input-prepend input:focus { border-color: rgba(82,168,236,.8); box-shadow: 0 0 8px rgba(82,168,236,.6); }
+  .input-prepend .btn.reset { flex: 1; border-radius: 0 4px 4px 0; }
+  .checkline { display: flex; align-items: center; gap: 7px; padding: 3px 0; font-size: 13.5px; cursor: pointer; }
+  .checkline input { margin: 0; }
+  .checkline.dim { color: #999; }
+  .sliderline { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .sliderline .addon2 {
+    background: #eee; border: 1px solid #ccc; border-radius: 4px; padding: 4px 8px; font-size: 12px;
+  }
+  .sliderline input[type=range] { flex: 1; }
+  /* directions */
+  #directions ul { margin: 0; padding-left: 18px; }
+  #directions li { margin: 3px 0; font-size: 13px; }
+  kbd {
+    background: #fee; color: #d14; border-radius: 3px; padding: 1px 5px; font-size: 12px;
+    font-family: Menlo, Monaco, monospace; border: 1px solid #f5d0d0;
+  }
+
+  /* modal */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+    display: none; align-items: flex-start; justify-content: center; padding-top: 60px;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 6px; width: 500px; max-width: 92vw;
+    box-shadow: 0 3px 20px rgba(0,0,0,0.4); overflow: hidden;
+  }
+  .modal .mbody { padding: 15px 15px; font-size: 14px; border-bottom: 1px solid #eee; }
+  .modal .mfoot { padding: 12px 15px; text-align: right; background: #f5f5f5; display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* dark theme */
+  body.dark { background: #1b1e24; color: #ccc; }
+  body.dark #navbar { background: #1b1e24; border-color: #333; }
+  body.dark #navbar .brand { color: #eee; }
+  body.dark .qcard .qheader { background: #252a33; border-color: #333; }
+  body.dark .qcard .qheader .crumb, body.dark .qcard .qheader .qanswer b, body.dark .qcard .qheader .qanswer u { color: #ddd; }
+  body.dark .qcard .qbody { background: #20242c; border-color: #333; color: #ccc; }
+  body.dark .card { background: #20242c; border-color: #333; }
+  body.dark .statrow, body.dark .playerrow { border-color: #2c313b; }
+  body.dark .feeditem.system { color: #aaa; }
+  body.dark .progress { background: #2c313b; }
+  body.dark #search, body.dark .input-prepend input, body.dark .input-prepend select { background: #1b1e24; color: #ccc; border-color: #444; }
+  body.dark .input-prepend .addon, body.dark .sliderline .addon2 { background: #2c313b; border-color: #444; color: #aaa; }
+  body.dark .modal { background: #252a33; color: #ccc; }
+  body.dark .modal .mfoot { background: #20242c; }
+
+  body.zen #navbar, body.zen #lonely, body.zen #directions { display: none; }
+
+  @media (max-width: 800px) {
+    #page { flex-direction: column; }
+    #sidebar { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stale-banner" style="display:none; background:#b94a48; color:#fff; text-align:center; padding:8px 14px; font-size:13.5px;">
+  &#9888;&#65039; The TrashBowl server you're connected to is running an <b>older version</b> than this page.
+  Stop it (Ctrl+C in its terminal, or <code style="background:rgba(0,0,0,.25); padding:1px 5px; border-radius:3px;">kill $(lsof -ti :3000)</code>) and run <code style="background:rgba(0,0,0,.25); padding:1px 5px; border-radius:3px;">npm start</code> again — settings and filters won't work until then.
+</div>
+<div id="navbar">
+  <span class="brand">Trash<span>bowl</span></span>
+  <span class="tagline">all trash, all the time</span>
+  <span class="spacer"></span>
+  <span class="about" id="about-link">About</span>
+  <span class="btn-group">
+    <button class="btn btn-primary" id="newroom-btn">New Room</button>
+    <button class="btn btn-primary caret-btn" id="newroom-caret"><span class="caret"></span></button>
+    <ul class="dropdown-menu" id="newroom-menu">
+      <li><a id="menu-random">Random room</a></li>
+      <li><a id="menu-named">Join room by name…</a></li>
+    </ul>
+  </span>
+</div>
+
+<div id="page">
+  <div id="maincol">
+    <div id="toolbar">
+      <button class="btn" id="chat-btn">&#128172; Chat</button>
+      <button class="btn btn-info" id="skipnext-btn">Skip</button>
+      <button class="btn btn-warning" id="pause-btn">Pause</button>
+      <span class="spacer"></span>
+      <button class="btn btn-danger" id="buzz-btn">&#128276; Buzz</button>
+    </div>
+    <div id="guessbar">
+      <span class="glabel" id="guess-label">&#9998; Guess</span>
+      <input id="guess-input" placeholder="answer" autocomplete="off">
+    </div>
+
+    <div class="qcard" id="current-card">
+      <div class="qheader" id="cur-header">
+        <span class="crumb" id="cur-crumbs">TrashBowl</span>
+        <span class="qanswer" id="cur-answer"></span>
+        <span class="star" id="cur-star">&#9734;</span>
+      </div>
+      <div class="qbody" id="cur-body">
+        <div id="start-wrap"><button class="btn btn-success btn-large" id="start-btn">Start the Question</button></div>
+        <div id="qtext"></div>
+      </div>
+    </div>
+
+    <div id="livefeed"></div>
+
+    <div id="histhead">
+      <span class="bmcount" id="bmcount"></span>
+      <span class="hr"></span>
+      <input id="search" placeholder="Search" autocomplete="off">
+    </div>
+    <div id="histlist"></div>
+    <div id="pager">
+      <button class="btn" id="prev-btn">&#8592; Previous</button>
+      <span class="pageno" id="pageno"></span>
+      <button class="btn" id="next-page-btn">Next &#8594;</button>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="card" id="timercard">
+      <div class="toprow">
+        <span class="clock">&#128337;</span>
+        <span class="tbadge" id="timer-badge"></span>
+      </div>
+      <div id="timer-digits">00:00<span class="tenths">.0</span></div>
+      <div class="progress"><div class="bar" id="timer-bar"></div></div>
+    </div>
+
+    <div class="card" id="playerscard">
+      <h4><span class="icon">&#128100;</span> <span id="players-title">Single Player</span> <span id="offline-badge" class="badge badge-important badge-label" style="display:none">Offline</span></h4>
+      <div class="statrow"><span class="lbl">Score</span><span class="val"><span class="badge" id="my-score">0</span></span></div>
+      <div class="statrow"><span class="lbl">Correct</span><span class="val" id="my-correct">0 <span class="sub">/ 0 / 0</span></span></div>
+      <div class="statrow"><span class="lbl">Interrupts</span><span class="val" id="my-interrupts">0 <span class="sub">/ 0 / 0</span></span></div>
+      <div class="statrow"><span class="lbl">Seen</span><span class="val" id="my-seen">0 <span class="sub">/ 0</span></span></div>
+      <div id="other-players"></div>
+    </div>
+
+    <div class="card" id="lonely">
+      <h4><span class="icon">&#127760;</span> Feeling Lonely?</h4>
+      <div id="lonely-body" style="font-size:13.5px">Consider joining a public room such as <a href="/trash">trash</a> or <a href="/sports">sports</a>.</div>
+    </div>
+
+    <div class="card" id="settingscard">
+      <h4><span class="icon">&#128295;</span> Settings</h4>
+      <div class="input-prepend">
+        <span class="addon">&#128100;</span>
+        <input id="name-input" maxlength="32" placeholder="Your name">
+      </div>
+      <div class="input-prepend">
+        <span class="addon">&#128465;</span>
+        <button class="btn reset" id="reset-btn">Reset My Score</button>
+      </div>
+      <label class="checkline dim"><input type="checkbox" id="opt-last50"> Points earned in last 50 questions</label>
+      <label class="checkline"><input type="checkbox" id="opt-zen"> Enable distraction free mode</label>
+      <label class="checkline"><input type="checkbox" id="opt-livechat" checked> Show chat messages while typing</label>
+      <label class="checkline dim"><input type="checkbox" disabled> Enable audio chat with others</label>
+      <label class="checkline"><input type="checkbox" id="opt-sound"> Play sound on successful buzz</label>
+      <label class="checkline"><input type="checkbox" id="opt-dark"> Enable dark theme</label>
+      <div class="sliderline">
+        <span class="addon2">&#9197;</span>
+        <input type="range" id="speed-slider" min="60" max="300" step="5">
+      </div>
+      <div class="input-prepend">
+        <span class="addon">&#128188;</span>
+        <select id="level-select"><option value="">Any</option></select>
+        <select id="sport-select"><option value="">All Sports</option></select>
+      </div>
+      <label class="checkline dim"><input type="checkbox" disabled> Show bonus questions</label>
+      <label class="checkline"><input type="checkbox" id="opt-multibuzz" checked> Allow players to buzz multiple times</label>
+      <label class="checkline"><input type="checkbox" id="opt-skip" checked> Allow players to skip questions</label>
+      <label class="checkline"><input type="checkbox" id="opt-pause" checked> Allow players to pause questions</label>
+    </div>
+
+    <div class="card" id="directions">
+      <h4><span class="icon">&#8505;</span> Directions</h4>
+      <ul>
+        <li>Press <kbd>space</kbd> to buzz</li>
+        <li>Press <kbd>n</kbd> or <kbd>j</kbd> for next question</li>
+        <li>Press <kbd>s</kbd> to skip, <kbd>p</kbd> to pause</li>
+        <li>Press <kbd>c</kbd>, <kbd>/</kbd>, or <kbd>enter</kbd> to chat</li>
+        <li>Invite other people to this URL to play together</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay">
+  <div class="modal">
+    <div class="mbody" id="confirm-text">Are you sure you want to reset your score?</div>
+    <div class="mfoot">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-primary" id="confirm-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="about-overlay">
+  <div class="modal">
+    <div class="mbody">
+      <b>TrashBowl</b> is a real-time quizbowl app for Trash &amp; Sports, in the spirit of
+      <a href="https://protobowl.com" target="_blank">Protobowl</a>. Questions come from packets
+      released for free study/practice use (via the qbreader.org archive) plus original
+      TrashBowl sports tossups. Powers are worth 15, tossups 10, interrupts −5.
+    </div>
+    <div class="mfoot"><button class="btn btn-primary" id="about-ok">OK</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; };
+
+  // ---------- identity ----------
+  const NAMES = ["John Madden","Vin Scully","Joe Buck","Al Michaels","Jim Nantz","Dick Vitale",
+    "Marv Albert","Doris Burke","Kevin Harlan","Chris Berman","Erin Andrews","Stuart Scott",
+    "Pat Summerall","Linda Cohn","Harry Caray","Mary Carillo"];
+  const store = {
+    get: (k, d) => { try { const v = localStorage.getItem("tb-" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set: (k, v) => localStorage.setItem("tb-" + k, JSON.stringify(v)),
+  };
+  const clientKey = store.get("key") || (() => { const k = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set("key", k); return k; })();
+  let myName = store.get("name") || NAMES[Math.floor(Math.random() * NAMES.length)];
+  store.set("name", myName);
+
+  // room from path
+  const WORDS1 = ["swag","turbo","mega","ultra","hyper","dizzy","rowdy","clutch","salty","spicy"];
+  const WORDS2 = ["walrus","dinger","buzzer","goggles","pickle","rocket","bucket","biscuit","mullet","zamboni"];
+  const randRoom = () => WORDS1[Math.floor(Math.random()*WORDS1.length)] + "-" + WORDS2[Math.floor(Math.random()*WORDS2.length)];
+  let room = location.pathname.replace(/^\//, "").replace(/[^\w-]/g, "") ||
+             new URLSearchParams(location.search).get("room") || "";
+  if (!room) { room = randRoom(); }
+  history.replaceState(null, "", "/" + room);
+
+  // ---------- state ----------
+  const S = {
+    ws: null, playerId: null, connected: false,
+    phase: "idle", paused: false, myBuzz: false, buzzerName: null,
+    subcats: [], sports: [], levels: [], settings: {},
+    // timer
+    totalMs: 0, remainMs: 0, buzzRemainMs: 0, deadTime: 6000, speed: 135,
+    totalWords: 0, revealed: 0, powerIndex: -1,
+    // current question meta
+    cur: null, curBuzzRows: new Map(), activeBuzzRow: null,
+    qNumber: 0, mySeen: 0,
+    bookmarks: store.get("bookmarks", {}),   // qid -> meta
+    live: [],           // live items for the current question, newest first
+    feed: [],           // archived history items, newest first
+    page: 0, searchMode: false, bmFilter: false,
+    liveChatRow: null,
+    prevQuestion: null, // for collapsing into feed
+  };
+  const PAGE_SIZE = 15;
+
+  // ---------- websocket ----------
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(proto + "//" + location.host);
+    S.ws = ws;
+    ws.onopen = () => {
+      S.connected = true;
+      $("offline-badge").style.display = "none";
+      systemMsg("established a connection to the secure server");
+      send({ type: "join", room, name: myName, clientKey });
+    };
+    ws.onmessage = (e) => handle(JSON.parse(e.data));
+    ws.onclose = () => {
+      S.connected = false;
+      $("offline-badge").style.display = "";
+      setTimeout(connect, 1500);
+    };
+  }
+  const send = (m) => S.ws?.readyState === 1 && S.ws.send(JSON.stringify(m));
+
+  // ---------- feed ----------
+  function renderFeedItem(item) {
+    if (item.kind === "system") {
+      const el = document.createElement("div");
+      el.className = "feeditem system";
+      el.innerHTML = (item.count > 1 ? `<span class="badge cnt">${item.count}x</span>` : "") + esc(item.text);
+      return el;
+    }
+    if (item.kind === "chat") {
+      const el = document.createElement("div");
+      el.className = "feeditem chatrow";
+      el.innerHTML = `<span class="who">${esc(item.player)}:</span> ${esc(item.text)}`;
+      return el;
+    }
+    if (item.kind === "buzz") {
+      const el = document.createElement("div");
+      el.className = "buzzrow";
+      el.innerHTML = buzzRowHTML(item);
+      return el;
+    }
+    if (item.kind === "question") {
+      return questionCard(item, true);
+    }
+    return document.createElement("div");
+  }
+
+  function buzzRowHTML(item) {
+    let badge = "";
+    if (item.verdict === "correct") badge = `<span class="badge badge-success badge-label">Correct</span>`;
+    else if (item.verdict === "wrong") badge = `<span class="badge badge-warning badge-label">Wrong</span>`;
+    return `<span class="badge badge-inverse badge-label">Buzz</span>` +
+      `<span class="who">${esc(item.player)}</span>` +
+      `<span class="guess">${esc(item.guess || "")}</span>` + badge;
+  }
+
+  function questionCard(q, compact) {
+    const card = document.createElement("div");
+    card.className = "qcard" + (compact ? " compact" : "");
+    const starred = !!S.bookmarks[q.qid];
+    card.innerHTML =
+      `<div class="qheader">` +
+        `<span class="crumb">${esc(q.set || "TrashBowl")}</span>` +
+        (q.level ? `<span class="sep">/</span><span class="crumb">${esc(lvlAbbr(q.level))}</span>` : "") +
+        (q.sport ? `<span class="sep">/</span><span class="crumb">${esc(cap(q.sport))}</span>` : `<span class="sep">/</span><span class="crumb">${esc(q.subcategory || "")}</span>`) +
+        `<span class="sep">/</span><a class="edit" href="/api/question/${encodeURIComponent(q.qid)}" target="_blank">Edit</a>` +
+        `<span class="qanswer">${q.answer || ""}</span>` +
+        `<span class="star">${starred ? "★" : "☆"}</span>` +
+      `</div>` +
+      `<div class="qbody">${esc(q.question || "")}</div>`;
+    const star = card.querySelector(".star");
+    star.style.color = starred ? "#0088cc" : "#0088cc";
+    star.onclick = (e) => { e.stopPropagation(); toggleBookmark(q); star.textContent = S.bookmarks[q.qid] ? "★" : "☆"; updateBmCount(); };
+    if (compact) card.querySelector(".qheader").onclick = () => card.classList.toggle("expanded");
+    return card;
+  }
+  const cap = (s) => s ? s[0].toUpperCase() + s.slice(1) : s;
+  const lvlAbbr = (l) => l === "High School" ? "HS" : l === "Middle School" ? "MS" : l || "";
+
+  // live area: current-question buzzes + recent system/chat lines (above the search divider)
+  function renderLive() {
+    const lf = $("livefeed");
+    lf.innerHTML = "";
+    if (S.liveChatRow) lf.appendChild(S.liveChatRow);
+    for (const item of S.live) lf.appendChild(renderFeedItem(item));
+  }
+  function pushLive(item) {
+    if (item.kind === "system" && S.live[0]?.kind === "system" && S.live[0].text === item.text) {
+      S.live[0].count = (S.live[0].count || 1) + 1;
+    } else {
+      item.count = 1;
+      S.live.unshift(item);
+    }
+    renderLive();
+  }
+  function systemMsg(text) { pushLive({ kind: "system", text }); }
+  function archiveLive(prevQ) {
+    // move live items + the finished question card into paginated history (newest first)
+    if (prevQ) S.feed.unshift({ kind: "question", ...prevQ });
+    for (const it of [...S.live].reverse()) { delete it.marker; S.feed.unshift(it); }
+    if (S.feed.length > 600) S.feed.length = 600;
+    S.live = [];
+    renderLive();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = $("histlist");
+    list.innerHTML = "";
+    if (S.searchMode) return; // search renders its own results
+    let items = S.feed;
+    if (S.bmFilter) items = items.filter((i) => i.kind === "question" && S.bookmarks[i.qid]);
+    const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    S.page = Math.min(S.page, pages - 1);
+    const slice = items.slice(S.page * PAGE_SIZE, (S.page + 1) * PAGE_SIZE);
+    for (const item of slice) list.appendChild(renderFeedItem(item));
+    $("pageno").textContent = "Page " + (S.page + 1);
+    $("prev-btn").classList.toggle("disabled", S.page === 0);
+    $("next-page-btn").classList.toggle("disabled", S.page >= pages - 1);
+    $("pager").style.display = items.length > PAGE_SIZE ? "flex" : "none";
+  }
+  $("prev-btn").onclick = () => { S.page = Math.max(0, S.page - 1); renderHistory(); };
+  $("next-page-btn").onclick = () => { S.page++; renderHistory(); };
+
+  function updateBmCount() {
+    const n = Object.keys(S.bookmarks).length;
+    $("bmcount").textContent = n ? `${n} bookmark${n === 1 ? "" : "s"}` : "";
+    $("bmcount").classList.toggle("active", S.bmFilter);
+  }
+  $("bmcount").onclick = () => { S.bmFilter = !S.bmFilter; S.page = 0; updateBmCount(); renderHistory(); };
+  function toggleBookmark(q) {
+    if (S.bookmarks[q.qid]) delete S.bookmarks[q.qid];
+    else S.bookmarks[q.qid] = { qid: q.qid, set: q.set, category: q.category, subcategory: q.subcategory, sport: q.sport, level: q.level, answer: q.answer, question: q.question };
+    store.set("bookmarks", S.bookmarks);
+  }
+
+  // ---------- search ----------
+  let searchTimer = null;
+  $("search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = $("search").value.trim();
+    if (q.length < 2) { S.searchMode = false; renderHistory(); return; }
+    searchTimer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+        const data = await res.json();
+        S.searchMode = true;
+        const list = $("histlist");
+        list.innerHTML = "";
+        $("pager").style.display = "none";
+        if (!data.results.length) {
+          list.innerHTML = `<div class="feeditem system">No results</div>`;
+        }
+        for (const r of data.results) list.appendChild(questionCard(r, true));
+      } catch {}
+    }, 250);
+  });
+
+  // ---------- current question rendering ----------
+  function setCrumbs(q) {
+    $("cur-crumbs").innerHTML =
+      `${esc(q.set || "TrashBowl")}` +
+      (q.level ? ` <span class="sep">/</span> ${esc(lvlAbbr(q.level))}` : "") +
+      (q.sport ? ` <span class="sep">/</span> ${esc(cap(q.sport))}` : ` <span class="sep">/</span> ${esc(q.subcategory || "")}`) +
+      (q.done ? ` <span class="sep">/</span> <a class="edit" href="/api/question/${encodeURIComponent(q.qid)}" target="_blank">Edit</a>` : "");
+  }
+
+  function wordSpan(w, i) {
+    const span = document.createElement("span");
+    const inPower = S.powerIndex >= 0 && i <= S.powerIndex;
+    span.className = inPower ? "power" : "";
+    span.textContent = w + " ";
+    return span;
+  }
+
+  function addMarker(afterIndex, cls, label) {
+    const qt = $("qtext");
+    const m = document.createElement("span");
+    m.className = "marker " + cls;
+    m.textContent = label;
+    m.dataset.idx = afterIndex;
+    // insert after the (afterIndex-1)th word span, i.e. at current end during live play
+    qt.appendChild(m);
+    return m;
+  }
+
+  function beginQuestion(m) {
+    // collapse previous question + its buzzes into history
+    archiveLive(S.prevQuestion);
+    S.cur = { qid: m.qid, set: m.set, packet: m.packet, category: m.category, subcategory: m.subcategory, sport: m.sport, level: m.level, answer: "", question: "", done: false };
+    S.prevQuestion = null;
+    S.phase = "reading"; S.paused = false; S.myBuzz = false;
+    S.powerIndex = m.powerIndex; S.totalWords = m.total; S.revealed = 0;
+    S.speed = m.speed || S.speed; S.deadTime = m.deadTime || 6000;
+    S.totalMs = S.totalWords * S.speed + S.deadTime;
+    S.remainMs = S.totalMs;
+    S.qNumber = m.qNumber;
+    S.curBuzzRows.clear(); S.activeBuzzRow = null;
+    setCrumbs(S.cur);
+    $("cur-answer").innerHTML = "";
+    $("cur-star").textContent = S.bookmarks[m.qid] ? "★" : "☆";
+    $("qtext").innerHTML = "";
+    $("start-wrap").style.display = "none";
+    if (m.catchup) m.catchup.forEach((w, i) => { $("qtext").appendChild(wordSpan(w, i)); S.revealed = i + 1; });
+    if (m.debugAnswer) S.cur.debugAnswer = m.debugAnswer;
+    updateToolbar();
+    startTimerLoop();
+  }
+
+  function endQuestion(m) {
+    S.phase = "done"; S.paused = false; S.myBuzz = false;
+    S.cur = { ...S.cur, answer: m.answer, question: m.fullQuestion, done: true, set: m.set, subcategory: m.subcategory, sport: m.sport, level: m.level };
+    S.prevQuestion = { ...S.cur };
+    setCrumbs(S.cur);
+    $("cur-answer").innerHTML = m.answer;
+    // reveal any unread words
+    const qt = $("qtext");
+    const words = m.fullQuestion.split(/\s+/).filter(Boolean);
+    for (let i = S.revealed; i < words.length; i++) qt.appendChild(wordSpan(words[i], i));
+    S.revealed = words.length;
+    S.remainMs = 0;
+    // finalize active buzz row
+    hideGuessBar();
+    updateToolbar();
+    updateTimerUI();
+  }
+
+  // ---------- toolbar / guess bar ----------
+  function updateToolbar() {
+    if (typeof chatMode !== "undefined" && chatMode) return; // don't fight the chat input
+    const t = $("toolbar"), g = $("guessbar");
+    const showGuess = S.phase === "buzzed" && S.myBuzz;
+    t.style.display = showGuess ? "none" : "flex";
+    g.style.display = showGuess ? "flex" : "none";
+    const sn = $("skipnext-btn");
+    if (S.phase === "idle" || S.phase === "done") { sn.textContent = "Next"; sn.classList.remove("disabled"); }
+    else { sn.textContent = "Skip"; sn.classList.toggle("disabled", S.phase !== "reading" || S.paused || !S.settings.allowSkip); }
+    const pb = $("pause-btn");
+    pb.textContent = S.paused ? "Resume" : "Pause";
+    pb.className = "btn " + (S.paused ? "btn-success" : "btn-warning");
+    pb.classList.toggle("disabled", S.phase !== "reading" || !S.settings.allowPause);
+    $("buzz-btn").classList.toggle("disabled", !(S.phase === "reading" && !S.paused));
+    $("start-wrap").style.display = S.phase === "idle" ? "block" : "none";
+  }
+
+  function showGuessBar() {
+    S.myBuzz = true;
+    updateToolbar();
+    const inp = $("guess-input");
+    inp.value = "";
+    setTimeout(() => inp.focus(), 0);
+  }
+  function hideGuessBar() { S.myBuzz = false; updateToolbar(); }
+
+  let typeThrottle = null;
+  $("guess-input").addEventListener("input", () => {
+    if (chatMode) return;
+    clearTimeout(typeThrottle);
+    typeThrottle = setTimeout(() => send({ type: "typing", kind: "guess", text: $("guess-input").value }), 120);
+  });
+  $("guess-input").addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (chatMode) return;
+    if (e.key === "Enter") { send({ type: "answer", text: $("guess-input").value }); hideGuessBar(); }
+  });
+
+  // chat input (reuses guess bar styling) — declared before guess handlers run
+  var chatMode = false;
+  function openChat() {
+    if (S.phase === "buzzed" && S.myBuzz) return;
+    chatMode = true;
+    $("toolbar").style.display = "none";
+    $("guessbar").style.display = "flex";
+    $("guess-label").innerHTML = "&#128172; Chat";
+    const inp = $("guess-input");
+    inp.value = ""; inp.placeholder = "say something";
+    setTimeout(() => inp.focus(), 0);
+  }
+  function closeChat() {
+    chatMode = false;
+    $("guess-label").innerHTML = "&#9998; Guess";
+    $("guess-input").placeholder = "answer";
+    if (S.liveChatRow) { S.liveChatRow.remove(); S.liveChatRow = null; }
+    updateToolbar();
+  }
+  $("chat-btn").onclick = openChat;
+  $("guess-input").addEventListener("keydown", (e) => {
+    if (!chatMode) return;
+    if (e.key === "Enter") {
+      const text = $("guess-input").value.trim();
+      if (text) send({ type: "chat", text });
+      send({ type: "typing", kind: "chat", text: "" });
+      closeChat();
+    } else if (e.key === "Escape") { send({ type: "typing", kind: "chat", text: "" }); closeChat(); }
+  });
+  $("guess-input").addEventListener("input", () => {
+    if (chatMode && $("opt-livechat").checked) send({ type: "typing", kind: "chat", text: $("guess-input").value });
+  });
+
+  // ---------- timer ----------
+  let timerInterval = null;
+  let lastTick = 0;
+  function startTimerLoop() {
+    clearInterval(timerInterval);
+    lastTick = Date.now();
+    timerInterval = setInterval(() => {
+      const now = Date.now();
+      const dt = now - lastTick;
+      lastTick = now;
+      if (S.phase === "reading" && !S.paused) S.remainMs = Math.max(0, S.remainMs - dt);
+      else if (S.phase === "buzzed") S.buzzRemainMs = Math.max(0, S.buzzRemainMs - dt);
+      updateTimerUI();
+    }, 100);
+  }
+  function fmt(ms) {
+    const totalTenths = Math.max(0, Math.round(ms / 100));
+    const s = Math.floor(totalTenths / 10);
+    const t = totalTenths % 10;
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return { mm, ss, t };
+  }
+  function updateTimerUI() {
+    let ms, badge = "", barCls = "", frac = 0;
+    if (S.phase === "buzzed") {
+      ms = S.buzzRemainMs;
+      badge = `<span class="badge badge-important badge-label">Buzz</span>`;
+      barCls = "red";
+      frac = 1 - ms / 8000;
+    } else if (S.phase === "done") {
+      ms = 0;
+      badge = `<span class="badge badge-info badge-label">Done</span>`;
+      barCls = "striped";
+      frac = 1;
+    } else if (S.paused) {
+      ms = S.remainMs;
+      badge = `<span class="badge badge-warning badge-label">Paused</span>`;
+      frac = 1 - ms / S.totalMs;
+    } else if (S.phase === "reading") {
+      ms = S.remainMs;
+      frac = 1 - ms / S.totalMs;
+    } else { ms = 0; frac = 0; }
+    const { mm, ss, t } = fmt(ms);
+    $("timer-digits").innerHTML = `${mm}:${ss}<span class="tenths">.${t}</span>`;
+    $("timer-badge").innerHTML = badge;
+    const bar = $("timer-bar");
+    bar.className = "bar " + barCls;
+    bar.style.width = (frac * 100).toFixed(1) + "%";
+  }
+
+  // ---------- sounds ----------
+  function ding() {
+    if (!$("opt-sound").checked) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880; g.gain.value = 0.08;
+      o.start();
+      o.frequency.setValueAtTime(1320, ctx.currentTime + 0.09);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      o.stop(ctx.currentTime + 0.26);
+    } catch {}
+  }
+
+  // ---------- message handling ----------
+  function handle(m) {
+    switch (m.type) {
+      case "joined": {
+        S.playerId = m.playerId;
+        S.subcats = m.subcategories; S.sports = m.sports || []; S.levels = m.levels || [];
+        S.settings = m.settings;
+        // stale-server detection: old servers don't send version/levels/allow fields
+        const stale = !m.version || !m.levels || m.settings.allowMultiBuzz === undefined;
+        $("stale-banner").style.display = stale ? "block" : "none";
+        fillSelects();
+        applySettings(m.settings);
+        // restore this room's saved settings (survives server restarts)
+        const saved = store.get("room-settings-" + room);
+        if (saved && !stale) send({ type: "settings", ...saved });
+        break;
+      }
+      case "sync": {
+        S.settings = m.settings;
+        applySettings(m.settings);
+        renderPlayers(m.players, m.qNumber);
+        break;
+      }
+      case "question_start": beginQuestion(m); break;
+      case "word": {
+        $("qtext").appendChild(wordSpan(m.w, m.i));
+        S.revealed = m.i + 1;
+        S.remainMs = (S.totalWords - S.revealed) * S.speed + S.deadTime;
+        break;
+      }
+      case "reading_done": break;
+      case "buzz": {
+        S.phase = "buzzed";
+        S.buzzerName = m.player;
+        S.buzzRemainMs = m.answerTime || 8000;
+        const marker = addMarker(m.wordIndex, "buzz-active", "A");
+        const item = { kind: "buzz", player: m.player, playerId: m.playerId, guess: "", verdict: null, marker };
+        S.activeBuzzRow = item;
+        pushLive(item);
+        if (m.playerId === S.playerId) showGuessBar();
+        updateToolbar();
+        break;
+      }
+      case "typing": {
+        if (m.kind === "guess" && S.activeBuzzRow && m.playerId === S.activeBuzzRow.playerId) {
+          S.activeBuzzRow.guess = m.text;
+          renderLive();
+        } else if (m.kind === "chat" && m.playerId !== S.playerId && $("opt-livechat").checked) {
+          if (!S.liveChatRow) {
+            S.liveChatRow = document.createElement("div");
+            S.liveChatRow.className = "feeditem chatrow";
+            $("livefeed").prepend(S.liveChatRow);
+          }
+          if (m.text) S.liveChatRow.innerHTML = `<span class="who">${esc(m.player)}:</span> <span class="typing">${esc(m.text)}</span>`;
+          else { S.liveChatRow.remove(); S.liveChatRow = null; }
+        }
+        break;
+      }
+      case "judged": {
+        if (S.activeBuzzRow && m.playerId === S.activeBuzzRow.playerId) {
+          S.activeBuzzRow.guess = m.guess;
+          S.activeBuzzRow.verdict = m.correct ? "correct" : "wrong";
+          if (S.activeBuzzRow.marker) S.activeBuzzRow.marker.className = "marker " + (m.correct ? "buzz-active" : "buzz-wrong");
+          S.activeBuzzRow = null;
+          renderLive();
+        }
+        if (m.correct) ding();
+        if (!m.correct) {
+          S.phase = "reading";
+          if (m.playerId === S.playerId) hideGuessBar();
+          updateToolbar();
+        }
+        break;
+      }
+      case "question_end": endQuestion(m); break;
+      case "paused": {
+        S.paused = true;
+        addMarker(m.wordIndex, "pause", "‖");
+        systemMsg(`${m.player} paused the game`);
+        updateToolbar();
+        break;
+      }
+      case "resumed": {
+        S.paused = false;
+        systemMsg(`${m.player} resumed the game (paused for ${m.pausedFor} seconds)`);
+        updateToolbar();
+        break;
+      }
+      case "chat": {
+        if (m.system) systemMsg(m.text);
+        else {
+          if (S.liveChatRow && m.playerId !== S.playerId) { S.liveChatRow.remove(); S.liveChatRow = null; }
+          pushLive({ kind: "chat", player: m.player, text: m.text });
+        }
+        break;
+      }
+    }
+  }
+
+  // ---------- players / stats ----------
+  function renderPlayers(players, roomSeen) {
+    const online = players.filter((p) => p.online);
+    $("players-title").textContent = online.length <= 1 ? "Single Player" : `${online.length} Players Online`;
+    const me = players.find((p) => p.id === S.playerId);
+    if (me) {
+      $("my-score").textContent = me.score;
+      $("my-correct").innerHTML = `${me.correct} <span class="sub">/ ${me.correctStreak} / ${me.correctBest}</span>`;
+      $("my-interrupts").innerHTML = `${me.interrupts} <span class="sub">/ ${me.interruptStreak} / ${me.interruptBest}</span>`;
+      $("my-seen").innerHTML = `${me.seen} <span class="sub">/ ${roomSeen}</span>`;
+    }
+    const others = players.filter((p) => p.id !== S.playerId && (p.online || p.score !== 0));
+    const el = $("other-players");
+    el.innerHTML = others.length ? `<div style="height:8px"></div>` : "";
+    for (const p of others.sort((a, b) => b.score - a.score)) {
+      const row = document.createElement("div");
+      row.className = "playerrow" + (p.online ? "" : " offline");
+      row.innerHTML = `<span class="pname">${esc(p.name)}</span><span class="badge">${p.score}</span>`;
+      el.appendChild(row);
+    }
+  }
+
+  // ---------- settings ----------
+  function fillSelects() {
+    const lv = $("level-select");
+    lv.innerHTML = `<option value="">Any</option>` + S.levels.map((l) => `<option>${esc(l)}</option>`).join("");
+    const sp = $("sport-select");
+    sp.innerHTML = `<option value="">All Sports</option>` + S.sports.map((s) => `<option value="${esc(s)}">${esc(cap(s))}</option>`).join("");
+  }
+  function applySettings(s) {
+    $("speed-slider").value = s.speed;
+    // only apply fields the server actually sent — never clobber the UI with undefined
+    if ("allowMultiBuzz" in s) $("opt-multibuzz").checked = s.allowMultiBuzz;
+    if ("allowSkip" in s) $("opt-skip").checked = s.allowSkip;
+    if ("allowPause" in s) $("opt-pause").checked = s.allowPause;
+    if ("levels" in s) $("level-select").value = s.levels?.[0] || "";
+    if ("sports" in s) $("sport-select").value = s.sports?.[0] || "";
+    S.speed = s.speed;
+    updateToolbar();
+  }
+  function pushSettings() {
+    const payload = {
+      speed: +$("speed-slider").value,
+      levels: $("level-select").value ? [$("level-select").value] : [],
+      sports: $("sport-select").value ? [$("sport-select").value] : [],
+      allowMultiBuzz: $("opt-multibuzz").checked,
+      allowSkip: $("opt-skip").checked,
+      allowPause: $("opt-pause").checked,
+    };
+    store.set("room-settings-" + room, payload); // survives server restarts
+    send({ type: "settings", ...payload });
+  }
+  for (const id of ["speed-slider", "level-select", "sport-select", "opt-multibuzz", "opt-skip", "opt-pause"])
+    $(id).addEventListener("change", pushSettings);
+
+  $("name-input").value = myName;
+  $("name-input").addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      myName = $("name-input").value.trim() || myName;
+      store.set("name", myName);
+      send({ type: "rename", name: myName });
+      $("name-input").blur();
+    }
+  });
+
+  // local prefs
+  const prefs = store.get("prefs", { livechat: true, sound: false, dark: false, zen: false, last50: false });
+  $("opt-livechat").checked = prefs.livechat;
+  $("opt-sound").checked = prefs.sound;
+  $("opt-dark").checked = prefs.dark;
+  $("opt-zen").checked = prefs.zen;
+  $("opt-last50").checked = prefs.last50;
+  document.body.classList.toggle("dark", prefs.dark);
+  document.body.classList.toggle("zen", prefs.zen);
+  function savePrefs() {
+    store.set("prefs", {
+      livechat: $("opt-livechat").checked, sound: $("opt-sound").checked,
+      dark: $("opt-dark").checked, zen: $("opt-zen").checked, last50: $("opt-last50").checked,
+    });
+  }
+  for (const id of ["opt-livechat", "opt-sound", "opt-dark", "opt-zen", "opt-last50"])
+    $(id).addEventListener("change", () => {
+      savePrefs();
+      document.body.classList.toggle("dark", $("opt-dark").checked);
+      document.body.classList.toggle("zen", $("opt-zen").checked);
+    });
+
+  // reset score with confirm modal
+  $("reset-btn").onclick = () => $("confirm-overlay").classList.add("open");
+  $("confirm-cancel").onclick = () => $("confirm-overlay").classList.remove("open");
+  $("confirm-ok").onclick = () => { send({ type: "reset_score" }); $("confirm-overlay").classList.remove("open"); };
+
+  // about
+  $("about-link").onclick = () => $("about-overlay").classList.add("open");
+  $("about-ok").onclick = () => $("about-overlay").classList.remove("open");
+
+  // new room
+  $("newroom-btn").onclick = () => { location.href = "/" + randRoom(); };
+  $("newroom-caret").onclick = (e) => { e.stopPropagation(); $("newroom-menu").classList.toggle("open"); };
+  document.addEventListener("click", () => $("newroom-menu").classList.remove("open"));
+  $("menu-random").onclick = () => { location.href = "/" + randRoom(); };
+  $("menu-named").onclick = () => {
+    const r = prompt("Room name:");
+    if (r) location.href = "/" + r.replace(/[^\w-]/g, "");
+  };
+
+  // ---------- game buttons / keys ----------
+  $("buzz-btn").onclick = () => send({ type: "buzz" });
+  $("start-btn").onclick = () => send({ type: "next" });
+  $("skipnext-btn").onclick = () => {
+    if (S.phase === "idle" || S.phase === "done") send({ type: "next" });
+    else send({ type: "skip" });
+  };
+  $("pause-btn").onclick = () => send({ type: S.paused ? "resume" : "pause" });
+  $("cur-star").onclick = () => {
+    if (!S.cur) return;
+    const q = { ...S.cur, question: S.cur.question || currentText() };
+    toggleBookmark(q);
+    $("cur-star").textContent = S.bookmarks[q.qid] ? "★" : "☆";
+    updateBmCount();
+  };
+  const currentText = () => $("qtext").textContent.trim();
+
+  document.addEventListener("keydown", (e) => {
+    const tag = e.target.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if (e.key === "Enter" && tag === "BUTTON") return;
+    const k = e.key.toLowerCase();
+    if (e.code === "Space") { e.preventDefault(); if (S.phase === "reading" && !S.paused) send({ type: "buzz" }); }
+    else if (k === "n" || k === "j") { if (S.phase === "idle" || S.phase === "done") send({ type: "next" }); }
+    else if (k === "s") send({ type: "skip" });
+    else if (k === "p") send({ type: S.paused ? "resume" : "pause" });
+    else if (k === "c" || e.key === "/" || e.key === "Enter") { e.preventDefault(); openChat(); }
+  });
+
+  // ---------- feeling lonely ----------
+  async function refreshLonely() {
+    try {
+      const res = await fetch("/api/stats");
+      const data = await res.json();
+      const others = data.rooms.filter((r) => r.name !== room);
+      if (others.length) {
+        $("lonely-body").innerHTML = "Consider joining a public room such as " +
+          others.slice(0, 5).map((r) => `<a href="/${esc(r.name)}">${esc(r.name)}</a> (${r.players})`).join(" or ") + ".";
+      } else {
+        $("lonely-body").innerHTML = `Share this room's URL with friends, or try <a href="/trash">trash</a> or <a href="/sports">sports</a>.`;
+      }
+    } catch {}
+  }
+  refreshLonely();
+  setInterval(refreshLonely, 20000);
+
+  // ---------- boot ----------
+  updateBmCount();
+  updateToolbar();
+  updateTimerUI();
+  startTimerLoop();
+  connect();
+})();
+</script>
+</body>
+</html>
