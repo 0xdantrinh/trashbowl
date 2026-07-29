@@ -869,6 +869,12 @@
     switch (m.type) {
       case "joined": {
         S.playerId = m.playerId;
+        // the server may have suffixed the name to keep it unique in the room
+        if (m.name && m.name !== myName) {
+          myName = m.name;
+          store.set("name", myName);
+          $("name-input").value = myName;
+        }
         S.subcats = m.subcategories; S.sports = m.sports || []; S.levels = m.levels || [];
         S.settings = m.settings;
         // stale-server detection: old servers don't send version/levels/allow fields
@@ -999,6 +1005,14 @@
         addMarker(m.wordIndex, "pause", "‖");
         systemMsg(`${m.player} paused the game`);
         updateToolbar();
+        break;
+      }
+      case "renamed": {
+        if (m.name && m.name !== myName) {
+          myName = m.name;
+          store.set("name", myName);
+          $("name-input").value = myName;
+        }
         break;
       }
       case "resumed": {

@@ -112,6 +112,22 @@ function broadcast(room, msg) {
       if (ws.readyState === 1) ws.send(data);
 }
 
+function sendToPlayer(player, msg) {
+  const data = JSON.stringify(msg);
+  for (const ws of player.sockets) if (ws.readyState === 1) ws.send(data);
+}
+
+// Names are unique per room (case-insensitive): a second "John Madden"
+// becomes "John Madden 2". selfId exempts the player from their own name.
+function uniqueName(room, desired, selfId) {
+  const base = desired.slice(0, 28).trim() || "player";
+  const taken = (nm) => [...room.players.values()]
+    .some((p) => p.id !== selfId && p.name.toLowerCase() === nm.toLowerCase());
+  let name = base;
+  for (let n = 2; taken(name); n++) name = `${base} ${n}`;
+  return name;
+}
+
 function statPack(p) {
   return {
     id: p.id, name: p.name, score: p.score, online: p.online,
@@ -473,7 +489,6 @@ wss.on("connection", (ws) => {
       const firstSocket = !existing || existing.sockets.size === 0;
       if (existing) {
         player = existing;
-        player.name = name;
       } else {
         player = {
           id: String(nextId++), clientKey: msg.clientKey || null, name,
@@ -484,6 +499,7 @@ wss.on("connection", (ws) => {
         };
         room.players.set(player.id, player);
       }
+      player.name = uniqueName(room, name, player.id);
       player.sockets.add(ws);
       player.online = true;
       // the system paused this room when it emptied out — pick the game back
@@ -497,7 +513,7 @@ wss.on("connection", (ws) => {
         else startReading(room);
       }
       ws.send(JSON.stringify({
-        type: "joined", playerId: player.id, room: room.name, version: VERSION,
+        type: "joined", playerId: player.id, name: player.name, room: room.name, version: VERSION,
         subcategories: SUBCATS, sports: SPORTS, levels: LEVELS,
         settings: room.settings,
         questionCount: QUESTIONS.length,
@@ -595,12 +611,16 @@ wss.on("connection", (ws) => {
         break;
       }
       case "rename": {
-        const name = String(msg.name || "").slice(0, 32).trim();
-        if (name && name !== player.name) {
+        const wanted = String(msg.name || "").slice(0, 32).trim();
+        if (!wanted) break;
+        const name = uniqueName(room, wanted, player.id);
+        if (name !== player.name) {
           broadcastChat(room, { system: true, text: `${player.name} is now known as ${name}` });
           player.name = name;
           syncState(room);
         }
+        // always confirm the authoritative name (it may have been suffixed)
+        sendToPlayer(player, { type: "renamed", name: player.name });
         break;
       }
       case "reset_score": {
