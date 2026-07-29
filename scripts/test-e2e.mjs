@@ -15,6 +15,11 @@ assert.strictEqual(judgeGuess("manning", "Peyton Manning [prompt on Manning unti
 assert.strictEqual(judgeGuess("venus williams", "Serena Williams [do NOT accept or prompt on \"Venus Williams\"]", null), "incorrect", "explicit reject wins");
 assert.strictEqual(judgeGuess("water polo", "water polo (do not accept or prompt on \"polo\")", null), "correct", "reject is exact-phrase only");
 assert.strictEqual(judgeGuess("superbowl", "Super Bowl", "<b><u>Super Bowl</u></b>"), "correct", "joined words score");
+// a guess naming a different specific thing is wrong, not prompt-worthy
+const GONZ = ["Gonzaga University Bulldogs [accept either]", "<b><u>Gonzaga</u></b> University <b><u>Bulldogs</u></b> [accept either]"];
+assert.strictEqual(judgeGuess("university", ...GONZ), "prompt", "generic shared word prompts");
+assert.strictEqual(judgeGuess("university of connecticut", ...GONZ), "incorrect", "different specific school is wrong");
+assert.strictEqual(judgeGuess("gonzaga", ...GONZ), "correct", "either bolded portion scores");
 assert(checkAnswer("Tom Brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "exact");
 assert(checkAnswer("brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "surname");
 assert(checkAnswer("djokovic", "Novak Djokovic"), "surname 2");

@@ -988,9 +988,13 @@
           S.buzzRemainMs = m.answerTime || 8000; // fresh answer window for everyone's timer
           if (m.playerId === S.playerId) {
             // Enter hid the guess bar when the first answer was sent —
-            // reopen it so the prompted player can actually say more
+            // reopen it so the prompted player can actually say more, with
+            // their previous guess kept so they extend it instead of retyping
             showGuessBar();
-            $("guess-input").placeholder = "be more specific…";
+            const inp = $("guess-input");
+            inp.value = m.guess || "";
+            inp.placeholder = "be more specific…";
+            setTimeout(() => { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 0);
           }
         } else if (!m.correct) {
           S.phase = "reading";
