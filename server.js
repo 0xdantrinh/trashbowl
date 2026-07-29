@@ -67,6 +67,7 @@ function makeRoom(name) {
     readStartAt: null,    // timestamp of last (re)start; null when not ticking
     buzzer: null,
     buzzDeadline: 0,      // when the current buzzer's answer window ends
+    promptCount: 0,       // prompts issued on the current buzz (capped)
     autoPaused: false,    // paused by the system (empty room), not a player
     lockedOut: new Set(),
     readTimer: null,
@@ -241,6 +242,7 @@ function buzz(room, player) {
   room.readStartAt = null;
   room.state = "buzzed";
   room.buzzer = player.id;
+  room.promptCount = 0;
   if (room.readTimer) { clearTimeout(room.readTimer); room.readTimer = null; }
   if (room.deadTimer) { clearTimeout(room.deadTimer); room.deadTimer = null; }
   broadcast(room, {
@@ -256,7 +258,10 @@ function judgeAnswer(room, player, guess) {
   clearTimeout(room.answerTimer); room.answerTimer = null;
   room.buzzDeadline = 0;
   const q = room.q;
-  const result = judgeGuess(guess, q.answer, q.answerDisplay); // "correct" | "prompt" | "incorrect"
+  let result = judgeGuess(guess, q.answer, q.answerDisplay); // "correct" | "prompt" | "incorrect"
+  // like a live moderator, prompt at most twice per buzz — a third
+  // still-too-vague answer is ruled wrong instead of stalling the room
+  if (result === "prompt" && room.promptCount >= 2) result = "incorrect";
   const interrupted = room.wordIndex < q.words.length;
   const inPower = q.powerIndex >= 0 && room.wordIndex <= q.powerIndex;
 
@@ -275,6 +280,7 @@ function judgeAnswer(room, player, guess) {
     finishQuestion(room, player.id);
   } else if (result === "prompt") {
     // needs more — buzzer stays with this player, no points/penalty either way
+    room.promptCount++;
     broadcast(room, {
       type: "judged", verdict: "prompt", correct: false, player: player.name, playerId: player.id,
       guess, points: 0, power: false, interrupted, wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,

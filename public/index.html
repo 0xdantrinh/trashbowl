@@ -748,6 +748,7 @@
     updateToolbar();
     const inp = $("guess-input");
     inp.value = "";
+    inp.placeholder = "answer";
     setTimeout(() => inp.focus(), 0);
   }
   function hideGuessBar() { S.myBuzz = false; updateToolbar(); }
@@ -984,11 +985,12 @@
         }
         if (m.correct) ding();
         if (isPrompt) {
+          S.buzzRemainMs = m.answerTime || 8000; // fresh answer window for everyone's timer
           if (m.playerId === S.playerId) {
-            S.buzzRemainMs = m.answerTime || 8000;
-            const inp = $("guess-input");
-            inp.value = "";
-            setTimeout(() => inp.focus(), 0);
+            // Enter hid the guess bar when the first answer was sent —
+            // reopen it so the prompted player can actually say more
+            showGuessBar();
+            $("guess-input").placeholder = "be more specific…";
           }
         } else if (!m.correct) {
           S.phase = "reading";
