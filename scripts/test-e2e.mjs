@@ -2,10 +2,19 @@
 // exercises buzz/interrupt/neg/power/scoring/chat/settings.
 import { spawn } from "child_process";
 import WebSocket from "ws";
-import { checkAnswer } from "../lib/answer-check.js";
+import { checkAnswer, judgeGuess } from "../lib/answer-check.js";
 import assert from "assert";
 
 // ---- unit tests for answer checking ----
+// prompting: partial coverage of a bold-required phrase prompts, full coverage scores
+assert.strictEqual(judgeGuess("carolina", "South Carolina", "<b><u>South Carolina</u></b>"), "prompt", "half of a required phrase prompts");
+assert.strictEqual(judgeGuess("south carolina", "South Carolina", "<b><u>South Carolina</u></b>"), "correct", "full phrase scores");
+assert.strictEqual(judgeGuess("georgia", "South Carolina", "<b><u>South Carolina</u></b>"), "incorrect", "unrelated is wrong");
+assert.strictEqual(judgeGuess("kobe", "Kobe Bryant", "Kobe <b><u>Bryant</u></b>", ), "prompt", "unbolded first name prompts");
+assert.strictEqual(judgeGuess("manning", "Peyton Manning [prompt on Manning until Eli is mentioned]", "<b><u>P</u></b>eyton <b><u>Manning</u></b> [prompt on Manning until Eli is mentioned]"), "prompt", "explicit prompt-on overrides bold");
+assert.strictEqual(judgeGuess("venus williams", "Serena Williams [do NOT accept or prompt on \"Venus Williams\"]", null), "incorrect", "explicit reject wins");
+assert.strictEqual(judgeGuess("water polo", "water polo (do not accept or prompt on \"polo\")", null), "correct", "reject is exact-phrase only");
+assert.strictEqual(judgeGuess("superbowl", "Super Bowl", "<b><u>Super Bowl</u></b>"), "correct", "joined words score");
 assert(checkAnswer("Tom Brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "exact");
 assert(checkAnswer("brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "surname");
 assert(checkAnswer("djokovic", "Novak Djokovic"), "surname 2");
