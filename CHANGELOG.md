@@ -5,6 +5,19 @@ in this repo (`git show <hash>` for the full diff).
 
 ## 2026-07-30
 
+- **`bac1f6f`** — Fixed "accept either underlined" scoring wrong when the
+  bold markup merged what should be two independently-sufficient spans into
+  one (`The Buffalo Bills (accept either underlined)` bolds "Buffalo Bills"
+  as a single run, so "bills" alone only earned a prompt). Some of the
+  underlying data is worse — the plain text itself lost the space between
+  words entirely (`SeattleMariners`, `San Francisco49ers`) from stripping
+  adjacent HTML tags with nothing between them. When this directive is
+  present, required runs now also split on spaces and at camelCase/
+  letter-digit boundaries, guarded (every piece must be ≥4 letters, except
+  at an unambiguous digit boundary) so it can't tear apart real surnames
+  (McGregor) or glued brand names (TaxSlayer). 231 answer lines in the bank
+  carry this directive; verified against every real case that was actually
+  broken by it.
 - **`7eefb46`** — The answer clock now auto-submits whatever's currently
   typed when time runs out, instead of always judging an empty guess — a
   correct answer typed but never explicitly sent (no Enter) previously
