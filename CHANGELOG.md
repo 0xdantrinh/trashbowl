@@ -5,7 +5,7 @@ in this repo (`git show <hash>` for the full diff).
 
 ## 2026-07-29
 
-- **(pending push)** — Merged a second AI-generated batch: 30 more questions
+- **`e5a851b`** — Merged a second AI-generated batch: 30 more questions
   (6 each across combat, racing, golf, tennis, and 6 new hockey tossups —
   hockey's first appearance in `data/ai-sports.json`), covering athletes not
   yet in the bank (Holyfield, Canelo, Khabib, Verstappen, Lauda, Ballesteros,
