@@ -68,6 +68,7 @@ function makeRoom(name) {
     buzzer: null,
     buzzDeadline: 0,      // when the current buzzer's answer window ends
     promptCount: 0,       // prompts issued on the current buzz (capped)
+    pendingGuess: "",     // live keystrokes from the buzzer — used if their time runs out before they hit Enter
     autoPaused: false,    // paused by the system (empty room), not a player
     lockedOut: new Set(),
     readTimer: null,
@@ -243,6 +244,7 @@ function buzz(room, player) {
   room.state = "buzzed";
   room.buzzer = player.id;
   room.promptCount = 0;
+  room.pendingGuess = "";
   if (room.readTimer) { clearTimeout(room.readTimer); room.readTimer = null; }
   if (room.deadTimer) { clearTimeout(room.deadTimer); room.deadTimer = null; }
   broadcast(room, {
@@ -250,7 +252,7 @@ function buzz(room, player) {
     wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
   });
   room.buzzDeadline = Date.now() + DEFAULTS.answerTime;
-  room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
+  room.answerTimer = setTimeout(() => judgeAnswer(room, player, room.pendingGuess), DEFAULTS.answerTime);
 }
 
 function judgeAnswer(room, player, guess) {
@@ -286,7 +288,7 @@ function judgeAnswer(room, player, guess) {
       guess, points: 0, power: false, interrupted, wordIndex: room.wordIndex, answerTime: DEFAULTS.answerTime,
     });
     room.buzzDeadline = Date.now() + DEFAULTS.answerTime;
-    room.answerTimer = setTimeout(() => judgeAnswer(room, player, ""), DEFAULTS.answerTime);
+    room.answerTimer = setTimeout(() => judgeAnswer(room, player, room.pendingGuess), DEFAULTS.answerTime);
   } else {
     const pts = interrupted ? -5 : 0;
     player.score += pts;
@@ -587,9 +589,13 @@ wss.on("connection", (ws) => {
         // live keystroke broadcast (guess while buzzed, or chat)
         const kind = msg.kind === "guess" ? "guess" : "chat";
         if (kind === "guess" && room.buzzer !== player.id) break;
+        const text = String(msg.text || "").slice(0, 200);
+        // keep the buzzer's latest keystrokes so a timeout can submit
+        // whatever they'd typed instead of an empty guess
+        if (kind === "guess") room.pendingGuess = text;
         broadcast(room, {
           type: "typing", kind, player: player.name, playerId: player.id,
-          text: String(msg.text || "").slice(0, 200),
+          text,
         });
         break;
       }
