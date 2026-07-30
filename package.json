@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "fetch-questions": "node scripts/fetch-questions.mjs"
+    "fetch-questions": "node scripts/fetch-questions.mjs",
+    "validate-generated": "node scripts/validate-generated.mjs",
+    "merge-generated": "node scripts/merge-generated.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",

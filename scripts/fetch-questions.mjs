@@ -12,7 +12,7 @@ const OUT = path.join(__dirname, "..", "data", "questions.json");
 
 // subcategory -> target count (sports-first: the site currently plays Sports only)
 const TARGETS = {
-  Sports: 800,
+  Sports: 5000, // set high — the random-sample stale cap below is the real limiter
   Music: 120,
   Movies: 120,
   Television: 90,
@@ -53,10 +53,15 @@ if (existsSync(OUT)) {
   } catch {}
 }
 
+// how many consecutive random-sample batches with zero new questions before
+// giving up on a subcategory — override with STALE_CAP=30 for a deeper,
+// slower exploratory pull once in a while
+const STALE_CAP = Number(process.env.STALE_CAP) || 8;
+
 for (const [sub, target] of Object.entries(TARGETS)) {
   let have = [...seen.values()].filter((q) => q.subcategory === sub).length;
   let stale = 0;
-  while (have < target && stale < 8) {
+  while (have < target && stale < STALE_CAP) {
     const before = seen.size;
     let batch;
     try {

@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const RULES = [
+export const RULES = [
   ["football", /\b(nfl|quarterback|touchdown|super bowl|wide receiver|linebacker|end zone|field goal|running back|heisman|offensive line|cornerback|tight end|interception|punt)\b/i],
   ["basketball", /\b(nba|wnba|three-point|dunk|rebound|point guard|free throw|jump shot|final four|march madness|backboard|layup|alley-oop)\b/i],
   ["baseball", /\b(mlb|home run|pitcher|inning|world series|shortstop|strikeout|batting|outfielder|no-hitter|grand slam(?! title)|fastball|bullpen|rbi)\b/i],
@@ -19,7 +19,7 @@ const RULES = [
   ["racing", /\b(nascar|formula one|formula 1|grand prix|indy 500|daytona|pit stop|pole position)\b/i],
 ];
 
-function tag(q) {
+export function tag(q) {
   const text = `${q.question} ${q.answer}`;
   const scores = RULES.map(([name, re]) => {
     const matches = text.match(new RegExp(re.source, "gi")) || [];
@@ -28,15 +28,21 @@ function tag(q) {
   return scores.length ? scores[0][0] : "other";
 }
 
-for (const file of ["questions.json", "original-sports.json"]) {
-  const p = path.join(__dirname, "..", "data", file);
-  let qs;
-  try { qs = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
-  const counts = {};
-  for (const q of qs) {
-    if (q.subcategory === "Sports" && !q.sport) q.sport = tag(q);
-    if (q.sport) counts[q.sport] = (counts[q.sport] || 0) + 1;
+// only run the file-rewriting pass when invoked directly (`node
+// scripts/tag-sports.mjs`) — importing this module for RULES/tag() elsewhere
+// (e.g. the AI-question validator) must not have this side effect
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
+  for (const file of ["questions.json", "original-sports.json"]) {
+    const p = path.join(__dirname, "..", "data", file);
+    let qs;
+    try { qs = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
+    const counts = {};
+    for (const q of qs) {
+      if (q.subcategory === "Sports" && !q.sport) q.sport = tag(q);
+      if (q.sport) counts[q.sport] = (counts[q.sport] || 0) + 1;
+    }
+    writeFileSync(p, JSON.stringify(qs, null, 1));
+    console.log(file, counts);
   }
-  writeFileSync(p, JSON.stringify(qs, null, 1));
-  console.log(file, counts);
 }

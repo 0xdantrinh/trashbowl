@@ -13,7 +13,7 @@ const VERSION = 4; // bumped when the client/server protocol changes
 
 // ---------- Question bank ----------
 function loadQuestions() {
-  const files = ["data/questions.json", "data/original-sports.json"];
+  const files = ["data/questions.json", "data/original-sports.json", "data/ai-sports.json"];
   let all = [];
   for (const f of files) {
     const p = path.join(__dirname, f);
