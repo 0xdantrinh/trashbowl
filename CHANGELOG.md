@@ -3,6 +3,23 @@
 All notable changes to TrashBowl, newest first. Hashes are short commit ids
 in this repo (`git show <hash>` for the full diff).
 
+## 2026-07-30
+
+- **`7eefb46`** — The answer clock now auto-submits whatever's currently
+  typed when time runs out, instead of always judging an empty guess — a
+  correct answer typed but never explicitly sent (no Enter) previously
+  scored as wrong. Applies to both the initial buzz window and the
+  follow-up window after a prompt.
+- **`b870f64` / `b96d7ca`** — Fixed a real judging bug found live: some
+  qbreader answer lines write a directive with no enclosing brackets at all
+  (`Peyton Manning; prompt on "Manning"` instead of the usual
+  `Peyton Manning [prompt on "Manning"]`). The parser only ever looked for
+  directives inside `[...]`/`(...)`, so the whole string was treated as one
+  literal main answer and "Manning" scored an instant correct instead of
+  prompting — affected 18 real questions in the bank. Bare, top-level
+  semicolon-separated directive clauses are now wrapped in synthetic
+  brackets before parsing.
+
 ## 2026-07-29
 
 - **`e5a851b`** — Merged a second AI-generated batch: 30 more questions
