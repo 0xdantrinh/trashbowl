@@ -25,6 +25,17 @@ const BAREMANNING = ['Peyton Manning; prompt on "Manning"', '<u>P</u>eyton <b><u
 assert.strictEqual(judgeGuess("manning", ...BAREMANNING), "prompt", "bare semicolon directive still prompts");
 assert.strictEqual(judgeGuess("peyton manning", ...BAREMANNING), "correct", "bare semicolon directive: full name scores");
 assert.strictEqual(judgeGuess("archie manning", ...BAREMANNING), "incorrect", "bare semicolon directive: wrong Manning is wrong");
+// "accept either underlined" when the bold run merged into one span (or the
+// plain text itself lost a space, e.g. from stripping adjacent HTML tags)
+const BILLS = ["The Buffalo Bills (accept either underlined)", "The <b><u>Buffalo Bills</u></b> (accept either underlined)"];
+assert.strictEqual(judgeGuess("bills", ...BILLS), "correct", "either-underlined: merged bold run splits by word");
+assert.strictEqual(judgeGuess("buffalo", ...BILLS), "correct", "either-underlined: merged bold run splits by word (other word)");
+const NINERS = ["San Francisco49ers [or Niners; accept any underlined portion]", "<b><u>San Francisco</u><u>49ers</u></b> [or <b><u>Niners</u></b>; accept any underlined portion]"];
+assert.strictEqual(judgeGuess("49ers", ...NINERS), "correct", "either-underlined: glued text splits at letter/digit boundary");
+const MCGREGOR = ["Conor McGregor [or Conor Anthony McGregor]", "Conor <b><u>McGregor</u></b> [or Conor Anthony <b><u>McGregor</u></b>]"];
+assert.strictEqual(judgeGuess("mcgregor", ...MCGREGOR), "correct", "camelCase split must not touch real surnames (McGregor)");
+const TAXSLAYER = ["TaxSlayer Gator Bowl [accept TaxSlayer.com Gator Bowl until \"TaxSlayer\"]", "TaxSlayer <b><u>Gator</u></b> Bowl [accept <b><u>TaxSlayer</u></b>.com Gator Bowl until \"TaxSlayer\"]"];
+assert.strictEqual(judgeGuess("slayer", ...TAXSLAYER), "incorrect", "camelCase split must not touch glued brand names (TaxSlayer)");
 assert(checkAnswer("Tom Brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "exact");
 assert(checkAnswer("brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "surname");
 assert(checkAnswer("djokovic", "Novak Djokovic"), "surname 2");
