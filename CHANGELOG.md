@@ -5,6 +5,16 @@ in this repo (`git show <hash>` for the full diff).
 
 ## 2026-07-29
 
+- **(pending push)** — Merged a second AI-generated batch: 30 more questions
+  (6 each across combat, racing, golf, tennis, and 6 new hockey tossups —
+  hockey's first appearance in `data/ai-sports.json`), covering athletes not
+  yet in the bank (Holyfield, Canelo, Khabib, Verstappen, Lauda, Ballesteros,
+  Gretzky, Orr, McDavid, and more). `data/ai-sports.json` now has 46
+  questions total, sports pool at 1,851. Live judging spot-checked before
+  merge (surname scoring, mononym prompting, wrong-answer rejection).
+- **`713d72e`** — Added this changelog and rewrote the README with enough
+  architectural depth (bold-markup judging convention, clock-based reading
+  model, multi-socket player model) to re-orient from zero prior context.
 - **`398171c`** — Built the AI-generated question pipeline: `scripts/lib/validate-question.mjs`
   (shared rule engine — schema completeness, power-mark count, `answerDisplay`
   bold-span presence, `answerDisplay`/`answer` text consistency, a self-check
