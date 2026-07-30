@@ -20,6 +20,11 @@ const GONZ = ["Gonzaga University Bulldogs [accept either]", "<b><u>Gonzaga</u><
 assert.strictEqual(judgeGuess("university", ...GONZ), "prompt", "generic shared word prompts");
 assert.strictEqual(judgeGuess("university of connecticut", ...GONZ), "incorrect", "different specific school is wrong");
 assert.strictEqual(judgeGuess("gonzaga", ...GONZ), "correct", "either bolded portion scores");
+// bare "Main; prompt on X" with no enclosing brackets — real qbreader data uses this
+const BAREMANNING = ['Peyton Manning; prompt on "Manning"', '<u>P</u>eyton <b><u>Manning</u></b>; prompt on "<b>Manning</b>"'];
+assert.strictEqual(judgeGuess("manning", ...BAREMANNING), "prompt", "bare semicolon directive still prompts");
+assert.strictEqual(judgeGuess("peyton manning", ...BAREMANNING), "correct", "bare semicolon directive: full name scores");
+assert.strictEqual(judgeGuess("archie manning", ...BAREMANNING), "incorrect", "bare semicolon directive: wrong Manning is wrong");
 assert(checkAnswer("Tom Brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "exact");
 assert(checkAnswer("brady", "Tom Brady [or Thomas Edward Patrick Brady Jr.]"), "surname");
 assert(checkAnswer("djokovic", "Novak Djokovic"), "surname 2");
