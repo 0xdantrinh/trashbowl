@@ -40,10 +40,18 @@ const existingBank = [
   assert(r.failures.some((f) => /power mark/.test(f)), "failure should mention power mark: " + JSON.stringify(r.failures));
 }
 
-// missing bold span
+// no markup at all (e.g. PDF-sourced imports with nothing to extract) is a
+// graceful, legitimate case — warns, doesn't fail
 {
   const r = validateQuestion(base({ answerDisplay: "Novak Djokovic" }), buildExistingIndex([existingBank]));
-  assert.strictEqual(r.pass, false, "missing <b> span should fail");
+  assert.strictEqual(r.pass, true, "answerDisplay with zero markup should pass (warning, not failure): " + JSON.stringify(r.failures));
+  assert(r.warnings.some((w) => /bold markup/.test(w)), "should still warn about the missing markup: " + JSON.stringify(r.warnings));
+}
+
+// markup present but no <b> span (a broken bold attempt) should still fail
+{
+  const r = validateQuestion(base({ answerDisplay: "Novak <i>Djokovic</i>" }), buildExistingIndex([existingBank]));
+  assert.strictEqual(r.pass, false, "markup without a <b> span should fail");
   assert(r.failures.some((f) => /<b>/.test(f)), "failure should mention <b>: " + JSON.stringify(r.failures));
 }
 

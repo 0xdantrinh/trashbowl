@@ -104,8 +104,15 @@ export function validateQuestion(q, index) {
     if (idx >= 0 && idx / words.length > 0.9) warnings.push("power mark is within the last 10% of the question — too close to the giveaway");
   }
 
-  if (!/<b[\s>]/i.test(q.answerDisplay)) {
-    failures.push('answerDisplay has no <b> span — prompting will degrade to "whole phrase required"');
+  // No markup at all (answerDisplay identical to answer) is a legitimate,
+  // graceful case — lib/answer-check.js falls back to lenient surname
+  // matching when there's no bold info (e.g. PDF-sourced imports have no
+  // formatting to extract). Only a BROKEN bold attempt — some other tag
+  // present but no <b> — is worth hard-failing.
+  if (/<[a-z]/i.test(q.answerDisplay) && !/<b[\s>]/i.test(q.answerDisplay)) {
+    failures.push('answerDisplay has markup but no <b> span — prompting will degrade to "whole phrase required"');
+  } else if (!/<b[\s>]/i.test(q.answerDisplay)) {
+    warnings.push("answerDisplay has no bold markup — will use lenient surname-fallback judging instead of exact bolded-span matching");
   }
 
   const strippedDisplay = normalizeQuotes(stripTags(q.answerDisplay));

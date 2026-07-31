@@ -9,19 +9,24 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MS = "Middle School", HS = "High School", COL = "College";
 
-const byDiff = (d) => (d >= 6 ? COL : d >= 2 ? HS : d === 1 ? MS : null);
+export const byDiff = (d) => (d >= 6 ? COL : d >= 2 ? HS : d === 1 ? MS : null);
 
-const HS_WORDS = /novice|scop|tails|kickoff|prison bowl|bhsat|show-me|\blist\b|tapir|\bsith\b|basqt|hsapq|nasat|maryland|spring|fall kickoff|moqba|bhsu|memorial|invitational|hippopotamus|saucy|kk?ck|state|districts|jv\b/i;
-const MS_WORDS = /middle school|\bms\b|elementary/i;
-const COL_WORDS = /acronym|mkultra|chicago open|oxford|penn bowl|\bwao\b|honk|t-party|dragoon|hybrid|league|geoffrey|dart|\bopen\b|college|acf|ict\b|guerrilla|trashmasters|delta burke|bisb|eft\b|mut\b/i;
+export const HS_WORDS = /novice|scop|tails|kickoff|prison bowl|bhsat|show-me|\blist\b|tapir|\bsith\b|basqt|hsapq|nasat|maryland|spring|fall kickoff|moqba|bhsu|memorial|invitational|hippopotamus|saucy|kk?ck|state|districts|jv\b/i;
+export const MS_WORDS = /middle school|\bms\b|elementary/i;
+export const COL_WORDS = /acronym|mkultra|chicago open|oxford|penn bowl|\bwao\b|honk|t-party|dragoon|hybrid|league|geoffrey|dart|\bopen\b|college|acf|ict\b|guerrilla|trashmasters|delta burke|bisb|eft\b|mut\b/i;
 
-function heuristic(set) {
+// unrated trash sets are overwhelmingly college/open events
+export function heuristic(set) {
   if (MS_WORDS.test(set)) return MS;
   if (COL_WORDS.test(set)) return COL;
   if (HS_WORDS.test(set)) return HS;
-  return COL; // unrated trash sets are overwhelmingly college/open events
+  return COL;
 }
 
+const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (isMain) await main();
+
+async function main() {
 const files = ["questions.json", "original-sports.json"].map((f) => path.join(__dirname, "..", "data", f));
 const all = files.map((p) => JSON.parse(readFileSync(p, "utf8")));
 
@@ -50,3 +55,4 @@ all.forEach((qs, i) => {
   writeFileSync(files[i], JSON.stringify(qs, null, 1));
 });
 console.log(counts);
+}

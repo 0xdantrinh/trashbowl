@@ -60,12 +60,13 @@ Single file, no framework/build step. All UI state lives in one `S` object; `han
 - `data/questions.json` — ~2,900 real Trash tossups (1,781 Sports + Music/Movies/TV/etc. held in reserve) pulled from the [qbreader.org](https://www.qbreader.org) API, with difficulty ratings where available. The server currently loads **Sports only**. Questions originate from packets released for free study/practice use; set and packet attribution is preserved and shown after each question. **Do not use them commercially or for paid tournaments without the authors' consent.**
 - `data/original-sports.json` — 24 original sports tossups written for this project, pyramidal with power marks. Add more here (same JSON shape) and they load automatically.
 - `data/ai-sports.json` — AI-assisted original sports tossups, generated via a documented human/Claude-in-the-loop procedure (see [`docs/ai-question-generation.md`](docs/ai-question-generation.md)), each validated by `scripts/validate-generated.mjs` before merge. **Unlike `data/questions.json`'s qbreader-sourced content, this file is original composition and carries no non-commercial-use restriction.** Currently 46 questions across combat, racing, golf, tennis, and hockey — more to come.
+- `data/quizbowlpackets-sports.json` — 691 real Trash tossups imported directly from [quizbowlpackets.com](https://popculture.quizbowlpackets.com)'s Pop Culture/Trash archive (a separate archive from qbreader's source, with real gaps in qbreader's own coverage — see [`docs/quizbowlpackets-import.md`](docs/quizbowlpackets-import.md) for the full pipeline). Same non-commercial-use restriction as `data/questions.json`.
 - Each Sports question carries `sport` (auto-tagged) and `level` (Middle School / High School / College) fields used by the room filters.
-- All three files are loaded and merged by `loadQuestions()` in `server.js`, filtered to `subcategory === "Sports"`. A question object's exact required shape (fields, power-mark convention, bracket grammar, bold markup) is documented in `docs/ai-question-generation.md` — that doc is the ground truth for "what does a valid question object look like," not just for AI generation.
+- All four files are loaded and merged by `loadQuestions()` in `server.js`, filtered to `subcategory === "Sports"`. A question object's exact required shape (fields, power-mark convention, bracket grammar, bold markup) is documented in `docs/ai-question-generation.md` — that doc is the ground truth for "what does a valid question object look like," not just for AI generation.
 
 ### Growing the bank
 
-1. **Real content first**: `node scripts/fetch-questions.mjs` pulls more from qbreader.org (resumable, dedupes by id). It's a random-sample API, so it self-limits via a "stale" counter (stop after N consecutive batches with nothing new); override with `STALE_CAP=30 node scripts/fetch-questions.mjs` for a deeper, slower pull once in a while. Last run took Sports from 825 → 1,781 before plateauing (that pool is likely exhausted for now — a direct [quizbowlpackets.com](https://quizbowlpackets.com) importer, which qbreader's own ingestion already partially draws from, is the next lever if this stops yielding).
+1. **Real content first**: `node scripts/fetch-questions.mjs` pulls more from qbreader.org (resumable, dedupes by id). It's a random-sample API, so it self-limits via a "stale" counter (stop after N consecutive batches with nothing new); override with `STALE_CAP=30 node scripts/fetch-questions.mjs` for a deeper, slower pull once in a while. Last run took Sports from 825 → 1,781 before plateauing (that pool was exhausted for now). A separate, direct [quizbowlpackets.com](https://popculture.quizbowlpackets.com) Pop Culture/Trash archive importer — targeting real coverage gaps confirmed in qbreader's own manual ingestion pipeline — added another 691 real questions; see [`docs/quizbowlpackets-import.md`](docs/quizbowlpackets-import.md).
 2. **AI-assisted original content**: see [`docs/ai-question-generation.md`](docs/ai-question-generation.md) for the full repeatable procedure (Wikipedia research → pyramidal drafting → bracket/bold markup → validate → human review → merge). No API key is required for this path — content is drafted by prompting Claude directly in a session; the staging/validate/merge pipeline is provider-agnostic so a scripted API-based generator could slot in later without a redesign.
 
 Scripts:
@@ -74,8 +75,14 @@ Scripts:
 node scripts/fetch-questions.mjs   # pull more questions (resumable, dedupes, keeps difficulty; STALE_CAP=30 for a deeper pull)
 node scripts/tag-sports.mjs        # auto-tag Sports questions by sport
 node scripts/tag-levels.mjs        # tag questions with MS/HS/College level
-node scripts/validate-generated.mjs data/staging/<file>.json          # validate an AI-generated staging batch
-node scripts/merge-generated.mjs data/staging/<file>.json --commit    # merge an approved batch into data/ai-sports.json
+node scripts/validate-generated.mjs data/staging/<file>.json          # validate an AI-generated or imported staging batch
+node scripts/merge-generated.mjs data/staging/<file>.json --commit    # merge into data/ai-sports.json (or --dest=<path> for another bank)
+
+# quizbowlpackets.com importer (see docs/quizbowlpackets-import.md for the full pipeline)
+node scripts/qbp-discover.mjs                  # discover Sports-tagged sets
+node scripts/qbp-fetch.mjs [--limit=N]         # download packet files
+node scripts/qbp-parse.mjs [--force]           # PDF/DOCX -> raw tossups
+node scripts/qbp-convert.mjs                   # raw tossups -> staging batch
 ```
 
 ## Testing
@@ -103,4 +110,4 @@ Any Node host with WebSocket support works (Railway, Render, Fly.io, a $5 VPS). 
 
 ## Ideas next
 
-Bonuses (30-point 3-parters), account-free stat tracking via localStorage keys (already used for reconnects), a question-submission page so the community writes sports packets, audio "buzz" effects, and growing `data/ai-sports.json` well past its current 16 questions.
+Bonuses (30-point 3-parters), account-free stat tracking via localStorage keys (already used for reconnects), a question-submission page so the community writes sports packets, audio "buzz" effects, a full crawl of every quizbowlpackets.com Sports-tagged set (v1 only covers the first listing page), and growing `data/ai-sports.json` further.

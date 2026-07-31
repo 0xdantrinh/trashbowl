@@ -8,10 +8,16 @@
     "start": "node server.js",
     "fetch-questions": "node scripts/fetch-questions.mjs",
     "validate-generated": "node scripts/validate-generated.mjs",
-    "merge-generated": "node scripts/merge-generated.mjs"
+    "merge-generated": "node scripts/merge-generated.mjs",
+    "qbp-discover": "node scripts/qbp-discover.mjs",
+    "qbp-fetch": "node scripts/qbp-fetch.mjs",
+    "qbp-parse": "node scripts/qbp-parse.mjs",
+    "qbp-convert": "node scripts/qbp-convert.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
     "ws": "^8.18.0"
   }
 }

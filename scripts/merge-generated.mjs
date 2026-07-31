@@ -1,9 +1,10 @@
-// Merges an approved staging batch into data/ai-sports.json. Re-validates
-// every question against the CURRENT bank at merge time (never trusts a
-// stale validate-time pass) and skips already-merged ids idempotently.
+// Merges an approved staging batch into a destination file (default
+// data/ai-sports.json). Re-validates every question against the CURRENT
+// bank at merge time (never trusts a stale validate-time pass) and skips
+// already-merged ids idempotently.
 // Usage:
-//   node scripts/merge-generated.mjs data/staging/<file>.json          (dry run)
-//   node scripts/merge-generated.mjs data/staging/<file>.json --commit
+//   node scripts/merge-generated.mjs data/staging/<file>.json [--dest=data/other.json] (dry run)
+//   node scripts/merge-generated.mjs data/staging/<file>.json [--dest=data/other.json] --commit
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -11,25 +12,27 @@ import { buildExistingIndex, validateQuestion } from "./lib/validate-question.mj
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, "..", "data");
-const DEST = path.join(DATA, "ai-sports.json");
 
 const commit = process.argv.includes("--commit");
-const file = process.argv.slice(2).find((a) => a !== "--commit");
+const destArg = process.argv.find((a) => a.startsWith("--dest="));
+const destName = destArg ? destArg.slice("--dest=".length) : "data/ai-sports.json";
+const DEST = path.isAbsolute(destName) ? destName : path.join(__dirname, "..", destName);
+const file = process.argv.slice(2).find((a) => a !== "--commit" && !a.startsWith("--dest="));
 if (!file) {
-  console.error("Usage: node scripts/merge-generated.mjs data/staging/<file>.json [--commit]");
+  console.error("Usage: node scripts/merge-generated.mjs data/staging/<file>.json [--dest=data/other.json] [--commit]");
   process.exit(1);
 }
 
 function loadBank(name) {
-  const p = path.join(DATA, name);
+  const p = path.isAbsolute(name) ? name : path.join(DATA, name);
   if (!existsSync(p)) return [];
   try { return JSON.parse(readFileSync(p, "utf8")); } catch { return []; }
 }
 
 const batchPath = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
 const batch = JSON.parse(readFileSync(batchPath, "utf8"));
-const dest = loadBank("ai-sports.json");
-const existing = [...loadBank("questions.json"), ...loadBank("original-sports.json"), ...dest];
+const dest = loadBank(DEST);
+const existing = [...loadBank("questions.json"), ...loadBank("original-sports.json"), ...loadBank("ai-sports.json"), ...dest];
 const index = buildExistingIndex([existing]);
 
 const toAdd = [];
@@ -69,6 +72,6 @@ if (!commit) {
     const merged = [...dest, ...toAdd];
     writeFileSync(DEST, JSON.stringify(merged, null, 1));
     console.log(`\nWrote ${merged.length} total questions to ${DEST} (${dest.length} -> ${merged.length})`);
-    console.log("Next: git diff data/ai-sports.json, then delete/archive the staging file once you're happy with the diff.");
+    console.log(`Next: git diff ${destName}, then delete/archive the staging file once you're happy with the diff.`);
   }
 }
