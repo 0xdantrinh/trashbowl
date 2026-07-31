@@ -3,6 +3,34 @@
 All notable changes to TrashBowl, newest first. Hashes are short commit ids
 in this repo (`git show <hash>` for the full diff).
 
+## 2026-07-31
+
+- **`7d301ea`** — New direct importer for popculture.quizbowlpackets.com's
+  Trash/Sports archive (`scripts/qbp-{discover,fetch,parse,convert}.mjs`),
+  a source with real, confirmed gaps in qbreader.org's own manual
+  ingestion. Added 691 real, human-written Sports tossups (1,851 → 2,542),
+  0 validation failures, spot-checked against source files across every
+  parsing strategy the pipeline supports. Real packets on this archive use
+  at least four distinct tossup-boundary conventions (bare "N." numbering,
+  native Word `<ol>/<li>` lists, explicit "Tossup N:"/"Bonus N" labels, and
+  no numbering at all — just consecutive `ANSWER:`-terminated paragraphs),
+  plus tossup+bonus pairs that reuse the same number; the parser tries each
+  strategy in order and falls through whenever a segmentation's own answer
+  text turns out to contain a second `ANSWER:` marker (a hard signal a
+  boundary was missed and content got silently swallowed — caught several
+  real bugs this way during development, including one file where a single
+  stray numbered marker absorbed the rest of the document into one span).
+  DOCX answer-span reconstruction now also detects and corrects for the
+  case where an author bolds an entire answer line (including the literal
+  word "ANSWER:") as visual flourish rather than marking a required span —
+  detected by checking whether `<b>` is already open at the marker's own
+  position, in which case underline (if present) is treated as the real
+  signal instead, promoted the same way an underline-only convention
+  already is. Prerequisite fixes: `validate-question.mjs` no longer
+  hard-fails PDF-sourced rows for lacking bold markup (downgraded to a
+  warning); `merge-generated.mjs` gained `--dest` so this batch merges into
+  its own `data/quizbowlpackets-sports.json` rather than `ai-sports.json`.
+
 ## 2026-07-30
 
 - **`bac1f6f`** — Fixed "accept either underlined" scoring wrong when the
