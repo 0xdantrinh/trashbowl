@@ -45,6 +45,16 @@ assert(!checkAnswer("federer", "Novak Djokovic"), "wrong answer rejected");
 assert(!checkAnswer("", "Novak Djokovic"), "empty rejected");
 assert(checkAnswer("penalty kicks", "penalty shootout [accept penalty kicks; prompt on \"penalties\"]"), "accept clause");
 assert(!checkAnswer("watson", "Nolan Ryan's no-hitters [accept any answer describing the no-hitters...]"), "unrelated rejected");
+// an inline "(Optional word)" mid-phrase (not a leading or bracketed
+// directive) used to be mistaken for the start of a directive block,
+// silently truncating everything after it out of the parsed answer —
+// found live: "I'm going to (Walt) Disney World!" or "...Disney Land!"
+// was losing both full destination phrases entirely
+const DISNEY = ["\"I'm going to (Walt) Disney World!\" or \"I'm going to (Walt) Disney Land!\"", "<b> ”I’m going to</b> (Walt)<b> Disney World!”</b> or<b> ”I’m going to</b> (Walt)<b> Disney Land!”</b>"];
+assert.strictEqual(judgeGuess("Disney World", ...DISNEY), "prompt", "inline optional word: bold sides alone don't fully match without the connecting phrase");
+assert.strictEqual(judgeGuess("I am going to Disney World", ...DISNEY), "correct", "inline optional word: full phrase without the optional word scores");
+assert.strictEqual(judgeGuess("I am going to Walt Disney World", ...DISNEY), "correct", "inline optional word: full phrase with the optional word also scores");
+assert.strictEqual(judgeGuess("I am going to Universal Studios", ...DISNEY), "incorrect", "inline optional word: unrelated destination still wrong");
 console.log("✓ answer-check unit tests passed");
 
 // ---- start server ----

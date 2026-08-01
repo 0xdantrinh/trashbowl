@@ -1,7 +1,7 @@
 // Validation rules for AI-generated/staged question objects, shared by
 // scripts/validate-generated.mjs (report) and scripts/merge-generated.mjs
 // (writer) so the rules live in exactly one place.
-import { judgeGuess } from "../../lib/answer-check.js";
+import { judgeGuess, mainAnswerText } from "../../lib/answer-check.js";
 import { RULES as SPORT_RULES, tag as tagSport } from "../tag-sports.mjs";
 
 const VALID_SPORTS = new Set(SPORT_RULES.map(([name]) => name).concat("other"));
@@ -21,18 +21,6 @@ function normalizeQuotes(s) {
     .replace(/[‘’]/g, "'")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-// mirrors parseAnswerLine's own "main phrase" extraction (lib/answer-check.js)
-// so the self-check targets the same text the judge would treat as primary,
-// including skipping a leading "(Optional word) Real Answer" parenthetical
-function mainAnswerText(answer) {
-  const line = answer || "";
-  const leading = line.match(/^(?:\[([^\]]*)\]|\(([^)]*)\))\s*/);
-  const start = leading ? leading[0].length : 0;
-  const rest = line.slice(start);
-  const bracketIdx = rest.search(/[\[(]/);
-  return (bracketIdx === -1 ? rest : rest.slice(0, bracketIdx)).trim();
 }
 
 // significant, de-boilerplated words for near-duplicate comparison

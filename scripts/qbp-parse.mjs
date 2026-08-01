@@ -194,8 +194,24 @@ function findAnswerDrivenSpans(plain) {
   for (let i = 0; i < markers.length; i++) {
     const m = markers[i];
     const answerStart = m.index + m[0].length;
-    const nlIdx = plain.indexOf("\n", answerStart);
-    const end = nlIdx === -1 ? plain.length : nlIdx;
+    // The answer clause commonly wraps onto a second (or third) source
+    // line — e.g. a long "(accept X; prompt on Y)" directive — so don't
+    // stop at the FIRST line break if that would cut the clause off with
+    // an unclosed paren/bracket (confirmed live: real answers silently
+    // truncated mid-directive, e.g. "...accept KU for" with the closing
+    // "Kansas)" stranded on the next source line). Keep extending line by
+    // line while one remains open, capped against a genuinely malformed
+    // or never-closed line.
+    let end = plain.indexOf("\n", answerStart);
+    if (end === -1) end = plain.length;
+    for (let extra = 0; extra < 4 && end < plain.length; extra++) {
+      const clause = plain.slice(answerStart, end);
+      const opens = (clause.match(/[(\[]/g) || []).length;
+      const closes = (clause.match(/[)\]]/g) || []).length;
+      if (opens <= closes) break;
+      const next = plain.indexOf("\n", end + 1);
+      end = next === -1 ? plain.length : next;
+    }
     spans.push({ num: i + 1, contentStart: questionStart, end });
     questionStart = end;
   }
@@ -233,8 +249,12 @@ const POWER_TOKEN_RE = /\(\s*\*\s*\)/;
 // boundary missed a real tossup/bonus start and silently swallowed extra
 // content (e.g. a doc with only one stray "1." false-positive marker and
 // no other numbering produces a single span spanning the entire rest of
-// the file). "ANSWER:" is a structural marker word, not something that
-// legitimately recurs inside one answer's own text.
+// the file). The embedded check specifically requires the colon that
+// every real marker in this corpus is written with ("ANSWER:") — the bare
+// word "answer" legitimately recurs in ordinary prompt/accept-clause
+// prose ("prompt if the answer is only part of..."), which a colon-less
+// check false-positives on, wrongly distrusting an otherwise perfectly
+// well-formed numbered file and routing it to a lossier fallback tier.
 function spansAreClean(plain, spans) {
   if (!spans.length) return false;
   for (const span of spans) {
@@ -242,7 +262,7 @@ function spansAreClean(plain, spans) {
     const m = ANSWER_RE.exec(spanPlain);
     if (!m) continue;
     const afterAnswer = spanPlain.slice(m.index + m[0].length);
-    if (/\bANSWER\b:?\s/i.test(afterAnswer)) return false;
+    if (/\bANSWER:\s/i.test(afterAnswer)) return false;
   }
   return true;
 }

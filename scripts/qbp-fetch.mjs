@@ -14,6 +14,14 @@ const MANIFEST_FILE = path.join(CACHE_DIR, "manifest.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Some sets bundle an "All Questions"/"Full Packet" combined file that's a
+// pure re-export of the individually-numbered files already fetched
+// separately (confirmed live: WEEKZERO's "All Questions.pdf" is a 90%+
+// content match against its own 4 quarter files) — skip these outright
+// rather than importing duplicate content and re-fighting whatever extra
+// PDF-reflow noise the combined export introduces on top of the originals.
+const SKIP_FILENAME_RE = /^(all questions|full packet|complete packet|combined)\b/i;
+
 const limitArg = process.argv.find((a) => a.startsWith("--limit="));
 const onlyArg = process.argv.find((a) => a.startsWith("--only="));
 const limit = limitArg ? Number(limitArg.slice("--limit=".length)) : Infinity;
@@ -82,6 +90,7 @@ async function main() {
         unsupported.push(decoded);
         continue;
       }
+      if (SKIP_FILENAME_RE.test(decoded)) continue;
 
       if (!files.some((f) => f.filename === decoded)) {
         files.push({ filename: decoded, localPath: path.relative(path.join(__dirname, ".."), localPath), url, packetLabel: labelFromFilename(decoded), ext });
