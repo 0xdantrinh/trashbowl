@@ -3,6 +3,48 @@
 All notable changes to TrashBowl, newest first. Hashes are short commit ids
 in this repo (`git show <hash>` for the full diff).
 
+## 2026-07-31 (2)
+
+- **`3eedf34`** — Fixed a real judging bug found live: an inline `"(Optional word)"` sitting
+  *mid-phrase* (not at the very start, and not inside `[...]`/`(...)`
+  directive prose) was mistaken for the start of a directive block, which
+  silently truncated everything after it out of the parsed answer entirely
+  — `"I'm going to (Walt) Disney World!" or "...Disney Land!"` lost both
+  full destination phrases, leaving only `"I'm going to"` as the sole
+  accepted answer. `parseAnswerLine`'s main-phrase boundary now only stops
+  at a bracket/paren whose *contents* are directive-shaped
+  (do-not/reject/prompt-on/or/accept), and `classifyBoldRuns` folds a
+  `[BOLD] "(word)" [BOLD]` triple into one continuous required run (with
+  the optional word kept separately, so both "with" and "without" score)
+  instead of treating the two bold sides as independently-sufficient
+  answers on their own — which the old un-bolded-gap rule would otherwise
+  make "Disney World" alone fully correct rather than a prompt. New
+  exported `mainAnswerText()` in `lib/answer-check.js` replaces a
+  self-check helper `validate-question.mjs` had been maintaining as a
+  hand-copied "mirror" of this same logic — it had already drifted out of
+  sync once (still using the old truncating boundary), which is exactly
+  how a hand-copy invariant breaks silently.
+- This surfaced two follow-on bugs in the quizbowlpackets.com importer
+  (`scripts/qbp-parse.mjs`) once its own self-consistency checks got
+  stricter: (1) `spansAreClean`'s embedded-marker check matched the bare
+  word "answer" appearing in ordinary judging prose ("prompt if the
+  *answer* is only part of..."), wrongly distrusting perfectly
+  well-formed numbered files and routing them to a lossier fallback tier
+  — tightened to require the colon every real marker in this corpus
+  actually has ("ANSWER:"); (2) `findAnswerDrivenSpans` (the no-numbering
+  fallback) stopped an answer clause at the first line break even when
+  that left an unclosed paren/bracket, silently dropping content that
+  wrapped onto a second source line — now extends across line breaks
+  while a paren/bracket remains open. Also dropped `WEEKZERO All
+  Questions.pdf`, a combined re-export that was ~90% duplicate content of
+  its own already-imported per-quarter files and, on top of that,
+  introducing extra reflow-related corruption (`qbp-fetch.mjs` now skips
+  "All Questions"/"Full Packet"/etc. combined-file re-exports outright).
+  Net effect on `data/quizbowlpackets-sports.json`: 691 → 613 (dropped
+  duplicate/corrupted rows, not the parsing improvements' addition — this
+  is the same source content, now parsed correctly), Sports pool
+  2,542 → 2,464.
+
 ## 2026-07-31
 
 - **`7d301ea`** — New direct importer for popculture.quizbowlpackets.com's
